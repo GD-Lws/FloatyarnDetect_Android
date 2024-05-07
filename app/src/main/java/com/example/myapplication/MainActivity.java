@@ -11,6 +11,7 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
@@ -89,53 +90,60 @@ import com.hoho.android.usbserial.util.SerialInputOutputManager;
 import org.opencv.videoio.VideoCapture;
 import org.opencv.videoio.Videoio;
 
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.lang.reflect.Executable;
 import java.nio.ByteBuffer;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 
+import static com.example.myapplication.MyUtil.getBufferedWriter;
+
+
 public class MainActivity extends Activity implements  View.OnClickListener,TextureView.SurfaceTextureListener {
-    private static final String DAG = "VideoTest";
+    private static final String FAG = "FileTest";
     private static final String CAG = "CameraDebug";
-    private static final String FMG = "CameraError";
     private static final String IAG = "IOSerial";
 
     private static final int REQUEST_CODE_PICK_VIDEOFile = 1;
+    private static final int REQUEST_CODE_PICK_DIRECTORY = 123;
 
     // Used to load the 'myapplication' library on application startup.
     static {
         System.loadLibrary("myapplication");
     }
-    private Button button_file, button_start, button_set, button_camera, button_serial;
+    private Button button_file, button_start, button_serial, button_record;
 //    ROI区域
     private EditText et_rx,et_ry,et_rw,et_rh, et_lx,et_ly,et_lw,et_lh;
-    private EditText[] et_roi_array,et_camera_array;
+    private EditText[] et_roi_array,et_camera_array,et_detect_array;
 //  相机参数
-    private EditText et_exposureTime, et_ISO, et_focusdistance, et_zoomare;
+    private EditText et_exposureTime, et_ISO, et_focusdistance, et_zoomare, et_recordFileName;
     private EditText et_camera_par1, et_camera_par2, et_camera_par3;
     private ExecutorService executors;
     private static Bitmap inBitmap = null;
 //  捕获会话
     private CameraCaptureSession mCaptureSession;
 //  用于控制多个线程对共享资源的访问，以确保同一时间只有一个线程可以访问相机设备
-    private long camera_exposureTime = new Long(1200000000L);
-    private int camera_Iso = 2000;
-    private float camera_focusDistance = 0.2f, camera_zoomRatio = 1.0F;
+    private long camera_exposureTime = new Long(7104250);
+    private int camera_Iso = 1200;
+    private float camera_focusDistance = 4.12f, camera_zoomRatio = 6.0F;
     private CameraCharacteristics cameraCharacteristics;
     private CameraManager cameraManager;
     private HandlerThread mCameraThread, mImageThread;
     private Handler mCameraHandler, mImageHandler;
-    private String file_path = null;
+    private String save_file_path = null;
     private String cameraId;
     private CameraDevice mCameraDevice;
     private CaptureRequest.Builder mPreviewBuilder;
@@ -146,14 +154,17 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
     private boolean detect_flag = false;
     //    文件选取或者相机获取
 //    private int roi_r_x,roi_r_y,roi_r_w,roi_r_h, roi_l_x,roi_l_y,roi_l_w,roi_l_h;
-    private int[] arr_roi1 = new int[]{400, 200, 800, 400};
-    private int[] arr_roi2 = new int[]{300, 500, 600, 700};
-    private float[] detect_par_arr = new float[]{30.0f, 255.0f, 0.3f};
+    private int[] arr_roi1 = new int[]{512, 200, 722, 380};
+    private int[] arr_roi2 = new int[]{512, 400, 662, 580};
+    private float[] detect_par_arr = new float[]{40.0f, 255.0f, 0.4f};
 
     private TextureView mCameraPreview,mResultPreview;
     private Size mPreviewSize;
     private TextView tv_machine_row;
     private MyUtil myUtil = new MyUtil();
+    private Spinner modeSelect;
+//    视频录制
+    private MediaRecorder mediaRecorder;
 
 //    串口配置
     private UsbManager usbManager = null;
@@ -167,12 +178,20 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
     private ArrayAdapter listAdapter;
     private int baudRate = 19200;
     private boolean serialOpenFlag = false;
+    private boolean recordFlag = false;
     private UsbSerialPort usbSerialPort;
     private UsbDeviceConnection usbConnection;
     private enum UsbPermission { Unknown, Requested, Granted, Denied }
     private MainActivity.UsbPermission usbPermission = MainActivity.UsbPermission.Unknown;
     private SerialInputOutputManager usbIoManager;
     private int[] baudRate_array = {9600, 19200, 38400, 57600, 76800, 115200};
+    private Surface resultSurface;
+    private String recordFileName = "测试文件";
+    private String getSave_file_path = "";
+    private int yarnRow = 0;
+    private int holdRow = 0;
+    private SharedPreferences cameraSP;
+
     private enum serialState {
         CLOSE,
         OPEN,
@@ -181,12 +200,20 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
     }
     private serialState currentState = serialState.CLOSE;
 
+    private enum appMode{
+        RECORD,
+        DETECT,
+        Compare
+    }
+    private appMode currentMode = appMode.DETECT;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         initView();
+        getSave_file_path = getExternalCacheDir().getAbsolutePath() + "/";
         OpenCVLoader.initDebug(false);
+        cameraSP = getSharedPreferences("CameraPreferences", Context.MODE_PRIVATE);
         if (myUtil.checkPermissions(MainActivity.this)) {
             // 权限已授予，执行您的逻辑
 //            openFilePicker();
@@ -206,8 +233,7 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
     private void initView(){
         button_file = findViewById(R.id.button_file);
         button_start = findViewById(R.id.button_start);
-        button_set = findViewById(R.id.button_set);
-        button_camera = findViewById(R.id.button_camera);
+        button_record = findViewById(R.id.button_record);
         button_serial = findViewById(R.id.button_serial);
 
         mCameraPreview = findViewById(R.id.textureview_camera);
@@ -216,11 +242,48 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
         mResultPreview.setSurfaceTextureListener(this);
         tv_machine_row = findViewById(R.id.tv_machine_row);
 
+        modeSelect = findViewById(R.id.Spinner_mode);
+
+        modeSelect.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                switch (position){
+                    case 0:{
+                        currentMode = appMode.DETECT;
+                        Toast.makeText(MainActivity.this, "Change to Detect Mode！", Toast.LENGTH_SHORT).show();
+                    }break;
+                    case 1:{
+                        currentMode = appMode.Compare;
+                        Toast.makeText(MainActivity.this, "Change to Compare Mode！", Toast.LENGTH_SHORT).show();
+                    }break;
+                    case 2:{
+                        currentMode = appMode.RECORD;
+                        Toast.makeText(MainActivity.this, "Change to Record Mode！", Toast.LENGTH_SHORT).show();
+                    }break;
+                }
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+
+            }
+        });
+
         button_start.setOnClickListener(this);
         button_file.setOnClickListener(this);
-        button_set.setOnClickListener(this);
         button_serial.setOnClickListener(this);
-        button_camera.setOnClickListener(this);
+        button_record.setOnClickListener(this);
+
+        Spinner spinnerParSet = findViewById(R.id.Spinner_Setpar);
+        spinnerParSet.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                Dialog_set(position);
+            }
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
     }
 
     @Override
@@ -241,24 +304,92 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
                 button_start.setText("START");
                 detect_flag = false;
             }
-        } else if (id == R.id.button_set) {
-            Toast.makeText(MainActivity.this, "ROI窗口设置", Toast.LENGTH_SHORT).show();
-            Dialog_roi_par();
-        } else if (id == R.id.button_camera) {
-            Toast.makeText(MainActivity.this, "摄像头参数设置", Toast.LENGTH_SHORT).show();
-            Dialog_camera_par();
         } else if (id == R.id.button_serial) {
             showPopupWindow();
             Toast.makeText(MainActivity.this, "串口监听", Toast.LENGTH_SHORT).show();
         } else if (id == R.id.button_file) {
+            openFilePicker();
             Toast.makeText(MainActivity.this, "文件选择", Toast.LENGTH_SHORT).show();
+        } else if (id == R.id.button_record) {
+            if (!recordFlag){
+                recordFlag = true;
+                button_record.setText("STOP");
+            }else {
+                recordFlag = false;
+                button_record.setText("RECORD");
+            }
         }
     }
 
 //   检查设置的参数
     private boolean checkCameraPar(){
-        Log.e(FMG,"参数设置错误");
+        Log.e(CAG,"参数设置错误");
         return false;
+    }
+    private void openFilePicker(){
+        Intent intent= new Intent(Intent.ACTION_GET_CONTENT);
+        intent.setType("video/*");
+        startActivityForResult(intent, REQUEST_CODE_PICK_VIDEOFile);
+    }
+
+//    @Override
+//    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+//        super.onActivityResult(requestCode, resultCode, data);
+//        if (requestCode == REQUEST_CODE_PICK_VIDEOFile && resultCode == RESULT_OK){
+//            Uri videoUri = data.getData();
+//            Log.d(FAG, "Video URI: " + videoUri.toString());
+//            String video_path = getRealPathFromURI(videoUri);
+//            if (video_path != null){
+//                Log.d(FAG, "Video Path: " + video_path);
+//                if(myUtil.check_video_permission(video_path)) {
+//                    save_file_path = video_path;
+//                }
+//            }else {
+//                Log.d("VideoUri", "Video URI: " + videoUri.toString());
+//            }
+//        }
+//    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_CODE_PICK_DIRECTORY && resultCode == RESULT_OK && data != null) {
+            Uri uri = data.getData();
+            if (uri != null) {
+                String folderPath = uri.getPath();
+                // 现在你可以使用文件夹路径来读取文件夹中的文件
+                Toast.makeText(MainActivity.this, "GetFoldPath", Toast.LENGTH_SHORT).show();
+//                readBmpFilesInFolder(folderPath);
+            }
+        }
+    }
+
+    private void readBmpFilesInFolder(String folderPath) {
+        File folder = new File(folderPath);
+        if (folder.exists() && folder.isDirectory()) {
+            File[] files = folder.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    if (file.isFile() && file.getName().toLowerCase().endsWith(".bmp")) {
+                        // 这里处理bmp文件
+                         file.getAbsolutePath();
+                    }
+                }
+            }
+        }
+    }
+
+    private String getRealPathFromURI(Uri contentUri) {
+        String[] projection = {MediaStore.Video.Media.DATA};
+        Cursor cursor = getContentResolver().query(contentUri, projection, null, null, null);
+        if (cursor != null) {
+            int columnIndex = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATA);
+            cursor.moveToFirst();
+            String path = cursor.getString(columnIndex);
+            cursor.close();
+            return path;
+        }
+        return null;
     }
 
 // 当 SurfaceTexture 对象关联的 Surface 已经准备好，可以开始渲染内容时调用
@@ -306,6 +437,7 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
         }
     };
 
+
 //    这个回调用于监听相机设备的状态变化
     private CameraDevice.StateCallback mStateCallback = new CameraDevice.StateCallback() {
         @Override
@@ -351,14 +483,14 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
         mPreviewBuilder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF);
         mPreviewBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_OFF);
         mPreviewBuilder.set(CaptureRequest.LENS_FOCUS_DISTANCE, camera_focusDistance);
-//        mPreviewBuilder.set(CaptureRequest.SENSOR_EXPOSURE_TIME, camera_exposureTime);
-//        mPreviewBuilder.set(CaptureRequest.SCALER_CROP_REGION, getRect(camera_zoomRatio));
+        mPreviewBuilder.set(CaptureRequest.SENSOR_EXPOSURE_TIME, camera_exposureTime);
+        mPreviewBuilder.set(CaptureRequest.SCALER_CROP_REGION, getRect(camera_zoomRatio));
         mPreviewBuilder.set(CaptureRequest.SENSOR_SENSITIVITY, camera_Iso);
         Log.d(CAG, "相机参数设置");
     }
     private void startPreview(){
         if (null == mCameraDevice) {
-            Log.e(FMG, "CameraDevice is null");
+            Log.e(CAG, "CameraDevice is null");
             return;
         }
         try {
@@ -435,18 +567,16 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
                     if (myUtil.checkRoiRange(yWidth, yWidth, arr_roi1) && myUtil.checkRoiRange(yWidth, yWidth, arr_roi2)) {
                         resultBitmap = Bitmap.createBitmap(yHeight, yWidth, Bitmap.Config.ARGB_8888);
                         if (detect_flag){
-                            detect_error = detectYarnInImage(grayscaleBitmap, resultBitmap, arr_roi1, arr_roi2, detect_par_arr);
-//                            File outputDir = getExternalFilesDir(null);
-//                            File outputFile = new File(outputDir, "image.jpg");
-//                            try (FileOutputStream fos = new FileOutputStream(outputFile)) {
-//                                grayscaleBitmap.compress(Bitmap.CompressFormat.JPEG, 100, fos);
-//                                Log.d(CAG, "Saved image to " + outputFile.getAbsolutePath());
-//                            } catch (IOException e) {
-//                                e.printStackTrace();
-//                            }
-//                            drawRoiRange(grayscaleBitmap, resultBitmap, arr_roi1, arr_roi2);
-//                            detect_flag = false;
+                            if (recordFlag){
+                                detect_error = detectYarnInImage(grayscaleBitmap, resultBitmap, arr_roi1, arr_roi2, detect_par_arr, getSave_file_path + "/" + recordFileName, yarnRow);
+                                yarnRow = yarnRow + 1;
+                            }else {
+                                detect_error = detectYarnInImage(grayscaleBitmap, resultBitmap, arr_roi1, arr_roi2, detect_par_arr, "N", 0);
+                            }
                             Log.i(CAG, "Detect flag " + detect_error);
+                            if (detect_flag & currentState == serialState.ACTIVE){
+                                serialSendData("F:" + detect_error);
+                            }
                         }else {
                             drawRoiRange(grayscaleBitmap, resultBitmap, arr_roi1, arr_roi2);
                         }
@@ -469,18 +599,84 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
             }
         }
     };
-    private void Dialog_camera_par() {
-        LayoutInflater inflater = (LayoutInflater) getSystemService(Context.LAYOUT_INFLATER_SERVICE);
-        View dialogView = inflater.inflate(R.layout.dig_camera_par_set, null);
-        AlertDialog.Builder builder = mygetBuilder(MainActivity.this, dialogView,0);
-        // 显示对话框
-        AlertDialog dialog = builder.create();
-        dialog.show();
+
+    private void writeROIToTxt(int[] roi1, int[] roi2) {
+        // 指定txt文件路径
+        String filePath = getSave_file_path + "/" + recordFileName + "/roi_coordinates.txt";
+        try {
+            BufferedWriter bw = myUtil.getBufferedWriter(roi1, roi2, filePath);
+            // 关闭文件写入对象
+            bw.close();
+            Log.d(FAG, "ROI坐标已写入到txt文件：" + filePath);
+        } catch (IOException e) {
+            e.printStackTrace();
+            Log.e(FAG, "写入ROI坐标时出错：" + e.getMessage());
+        }
     }
-    private void Dialog_roi_par() {
+
+    private void drawBitmapToSurfaceTexture(Bitmap bitmap) {
+        // 获取 SurfaceTexture
+        SurfaceTexture surfaceTexture = mResultPreview.getSurfaceTexture();
+        if (surfaceTexture == null) {
+            return;
+        }
+
+        // 将 SurfaceTexture 与当前线程关联
+        surfaceTexture.setDefaultBufferSize(bitmap.getWidth(), bitmap.getHeight());
+        resultSurface = new Surface(surfaceTexture);
+
+        try {
+            // 开始绘制
+            Canvas canvas = resultSurface.lockCanvas(null);
+            if (canvas != null) {
+                // 清除画布
+                canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
+
+                // 绘制 Bitmap
+                canvas.drawBitmap(bitmap, 0, 0, null);
+
+                // 结束绘制
+                resultSurface.unlockCanvasAndPost(canvas);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            resultSurface.release();
+        }
+    }
+
+//    index:0->camera;1->Roi;2->Detect
+    private void Dialog_set(int index) {
         LayoutInflater inflater = (LayoutInflater) getSystemService(Context.LAYOUT_INFLATER_SERVICE);
-        View dialogView = inflater.inflate(R.layout.dig_roi_set, null);
-        AlertDialog.Builder builder = mygetBuilder(MainActivity.this, dialogView,1);
+        View dialogView;
+        AlertDialog.Builder builder;
+        switch (index){
+            case 0:{
+                Toast.makeText(MainActivity.this, "摄像头参数设置", Toast.LENGTH_SHORT).show();
+                dialogView = inflater.inflate(R.layout.dig_camera_par_set, null);
+                builder = mygetBuilder(MainActivity.this, dialogView,index);
+            }break;
+            case 1:{
+                Toast.makeText(MainActivity.this, "ROI窗口设置", Toast.LENGTH_SHORT).show();
+                dialogView = inflater.inflate(R.layout.dig_roi_set, null);
+                builder = mygetBuilder(MainActivity.this, dialogView,index);
+            }break;
+            case 2:{
+                Toast.makeText(MainActivity.this, "识别参数设置", Toast.LENGTH_SHORT).show();
+                dialogView = inflater.inflate(R.layout.dig_detect_par_set, null);
+                builder = mygetBuilder(MainActivity.this, dialogView,index);
+            }break;
+            case 3:{
+                Toast.makeText(MainActivity.this, "录制文件名设置", Toast.LENGTH_SHORT).show();
+                dialogView = inflater.inflate(R.layout.dig_file_name, null);
+                builder = mygetBuilder(MainActivity.this, dialogView,index);
+            }break;
+            default:{
+                dialogView = inflater.inflate(R.layout.dig_camera_par_set, null);
+                builder = mygetBuilder(MainActivity.this, dialogView,index);
+                Toast.makeText(MainActivity.this, "Input index error!", Toast.LENGTH_SHORT).show();
+            }
+        }
         // 显示对话框
         AlertDialog dialog = builder.create();
         dialog.show();
@@ -598,24 +794,22 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         if (dialog_index == 0)builder.setTitle("相机参数设置");
         else if(dialog_index == 1)builder.setTitle("ROI区域设置");
+        else if (dialog_index == 2)builder.setTitle("检测参数设置");
+        else if (dialog_index == 3)builder.setTitle("录制文件名设置");
         builder.setView(dialogView);
         if(dialog_index == 0) {
             et_exposureTime = dialogView.findViewById(R.id.et_exposuretime);
             et_focusdistance = dialogView.findViewById(R.id.et_focusdistance);
             et_zoomare = dialogView.findViewById(R.id.et_zoomarea);
             et_ISO = dialogView.findViewById(R.id.et_iso);
-
-            et_camera_par1 = dialogView.findViewById(R.id.et_par_one);
-            et_camera_par2 = dialogView.findViewById(R.id.et_par_two);
-            et_camera_par3 = dialogView.findViewById(R.id.et_par_three);
-            et_camera_array = new EditText[]{et_exposureTime, et_ISO, et_focusdistance, et_zoomare, et_camera_par1, et_camera_par2, et_camera_par3};
+            et_camera_array = new EditText[]{et_exposureTime, et_ISO, et_focusdistance, et_zoomare};
             if (roi_flag) {
                 et_exposureTime.setText(String.valueOf(camera_exposureTime));
                 et_focusdistance.setText(String.valueOf(camera_focusDistance));
                 et_zoomare.setText(String.valueOf(camera_zoomRatio));
                 et_ISO.setText(String.valueOf(camera_Iso));
             }
-            Log.d(DAG, "camera_dig");
+            Log.d(CAG, "camera_dig");
         } else if (dialog_index == 1) {
             et_rx = dialogView.findViewById(R.id.et_roi_r_x);
             et_ry = dialogView.findViewById(R.id.et_roi_r_y);
@@ -642,7 +836,51 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
                     }
                 }
             }
+        } else if (dialog_index == 2) {
+            et_camera_par1 = dialogView.findViewById(R.id.et_par_one);
+            et_camera_par2 = dialogView.findViewById(R.id.et_par_two);
+            et_camera_par3 = dialogView.findViewById(R.id.et_par_three);
+            et_detect_array = new EditText[]{et_camera_par1, et_camera_par2, et_camera_par3};
+            for (int i = 0; i < 3; i++) {
+                et_detect_array[i].setText(String.valueOf(detect_par_arr[i]));
+            }
+        } else if (dialog_index == 3) {
+            et_recordFileName = dialogView.findViewById(R.id.et_recordFile);
+            Button bt_saveCameraPar = dialogView.findViewById(R.id.button_parsave);
+            Button bt_reloadCameraPar = dialogView.findViewById(R.id.button_parreload);
+            bt_saveCameraPar.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    String saveString = saveCameraPar();
+                    Toast.makeText(MainActivity.this, saveString, Toast.LENGTH_SHORT).show();
+                }
+            });
+            bt_reloadCameraPar.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    camera_Iso = cameraSP.getInt("Iso_value",camera_Iso);
+                    camera_focusDistance = cameraSP.getFloat("focusDistance",camera_focusDistance);
+                    camera_exposureTime = cameraSP.getLong("exposureTime", camera_exposureTime);
+                    camera_zoomRatio = cameraSP.getFloat("zoomRatio", camera_zoomRatio);
+                    String[] getRoiString = cameraSP.getString("roiArray", "").split(",");
+                    if (getRoiString.length > 0) {
+                        for (int i = 0; i < 8; i++) {
+                            if (i<4)arr_roi1[i] = Integer.parseInt(getRoiString[i]);
+                            else arr_roi2[i-4] = Integer.parseInt(getRoiString[i]);
+                        }
+                    }
+                    String[] getDetString = cameraSP.getString("detArray","").split(",");
+                    if (getDetString.length > 0) {
+                        for (int i = 0; i < 3; i++) {
+                            detect_par_arr[i] = Float.parseFloat(getRoiString[i]);
+                        }
+                    }
+                    Toast.makeText(MainActivity.this, "加载参数成功", Toast.LENGTH_SHORT).show();
+                }
+            });
+
         }
+
         builder.setPositiveButton("OK", new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialogInterface, int i) {
@@ -652,9 +890,7 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
                         int temp_camera_Iso = Integer.parseInt(et_camera_array[1].getText().toString());
                         float temp_camera_focusDistance = Float.parseFloat(et_camera_array[2].getText().toString());
                         float temp_camera_zoomRatio = Float.parseFloat(et_camera_array[3].getText().toString());
-                        for (int j = 4; j < 7; j++) {
-                            detect_par_arr[j - 4] = Float.parseFloat(et_camera_array[j].getText().toString());
-                        }
+
                         if (myUtil.isCameraParametersValid(temp_camera_exposureTime, temp_camera_Iso, temp_camera_focusDistance, temp_camera_zoomRatio)){
                             camera_exposureTime = temp_camera_exposureTime;
                             camera_Iso = temp_camera_Iso;
@@ -706,6 +942,19 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
                     }
                     roi_flag = true;
                 }
+                else if (dialog_index == 2){
+                    for (int j = 0; j < 3; j++) {
+                        detect_par_arr[j] = Float.parseFloat(et_detect_array[j].getText().toString());
+                    }
+                } else if (dialog_index == 3) {
+                    recordFileName = et_recordFileName.getText().toString();
+                    if (myUtil.createFolder(getSave_file_path+"/"+recordFileName))
+                    {
+                        yarnRow = 0;
+                        Toast.makeText(MainActivity.this, "新建文件夹:" + recordFileName, Toast.LENGTH_SHORT).show();
+
+                    }
+                }
                 dialogInterface.dismiss();
             }
         });
@@ -719,14 +968,44 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
         return builder;
     }
 
+
+    private String saveCameraPar(){
+        String result_string = "";
+        SharedPreferences.Editor editor = cameraSP.edit();
+        editor.putInt("Iso_value", camera_Iso);
+        editor.putFloat("focusDistance", camera_focusDistance);
+        editor.putLong("exposureTime", camera_exposureTime);
+        editor.putFloat("zoomRatio", camera_zoomRatio);
+        result_string = result_string + "Iso:"+ camera_Iso + " Fd:" + camera_focusDistance + " ET:" + camera_exposureTime + " ZR:" + camera_zoomRatio;
+        result_string = result_string + "\n";
+        String roi_string = "";
+        String det_string = "";
+        for (int i = 0; i < 8; i++) {
+            if (i < 4) roi_string = roi_string + arr_roi1[i]+",";
+            else {
+                roi_string = roi_string + arr_roi2[i - 4] + ",";
+            }
+        }
+        result_string = result_string + " Ro:" + roi_string + "\n";
+        editor.putString("roiArray", roi_string);
+        for (int i = 0; i < 3; i++) {
+            det_string = det_string + detect_par_arr + ",";
+        }
+        result_string = result_string + " De:" + det_string + "\n";
+        editor.putString("detArray", det_string);
+        editor.apply();
+        return result_string;
+    }
     private void openCamera(int width, int height) {
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         try {
-            CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
-            StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+            cameraCharacteristics = manager.getCameraCharacteristics(cameraId);
+            float maxZoom = cameraCharacteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM);
+            Log.d(CAG, "maxZoom:" + maxZoom);
+            StreamConfigurationMap map = cameraCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             mPreviewSize = chooseOptimalSize(map.getOutputSizes(SurfaceTexture.class), width, height);
             if ((checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) || (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED))  {
-                Log.d(DAG, "No camera and storage permission");
+                Log.d(CAG, "No camera and storage permission");
                 requestPermissions(new String[]{Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE}, 1001);
             }
             Log.d(CAG, "开启相机");
@@ -813,38 +1092,9 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
         }
     }
 
-    private void drawBitmapToSurfaceTexture(Bitmap bitmap) {
-        // 获取 SurfaceTexture
-        SurfaceTexture surfaceTexture = mResultPreview.getSurfaceTexture();
-        if (surfaceTexture == null) {
-            return;
-        }
 
-        // 将 SurfaceTexture 与当前线程关联
-        surfaceTexture.setDefaultBufferSize(bitmap.getWidth(), bitmap.getHeight());
-        Surface surface = new Surface(surfaceTexture);
 
-        try {
-            // 开始绘制
-            Canvas canvas = surface.lockCanvas(null);
-            if (canvas != null) {
-                // 清除画布
-                canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
-
-                // 绘制 Bitmap
-                canvas.drawBitmap(bitmap, 0, 0, null);
-
-                // 结束绘制
-                surface.unlockCanvasAndPost(canvas);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-            surface.release();
-        }
-    }
-
-    public native boolean detectYarnInImage(Bitmap inBitmap, Bitmap outBitmap, int[] roi1, int[] roi2, float[] det_par);
+    public native boolean detectYarnInImage(Bitmap inBitmap, Bitmap outBitmap, int[] roi1, int[] roi2, float[] det_par, String save_file_path, int yarnRow);
     public native void drawRoiRange(Bitmap inBitmap, Bitmap outBitmap, int[] roi1, int[] roi2);
     private static class ListItem {
         UsbDevice device;
@@ -995,10 +1245,11 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
             }
         });
     }
+
     public void executeAction(String rec_msg) {
         String[] rec_arr =  rec_msg.split(":");
         int rec_arr_len = rec_arr.length;
-        if (rec_arr[0].equals("G") & serialOpenFlag){
+        if (rec_arr[0].equals("GS") & serialOpenFlag){
             serialSendData("Now State is " + currentState);
         }
         switch (currentState) {
@@ -1006,7 +1257,7 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
                 transitionToNextState();
                 break;
             case OPEN:
-                if (rec_arr_len == 2 & rec_arr[0].equals("A") & serialOpenFlag) {
+                if (rec_arr_len == 2 & rec_arr[0].equals("AC") & serialOpenFlag) {
                     serialSendData("Serial trans to Activity State!");
                     transitionToNextState();
                 } else {
@@ -1022,26 +1273,36 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
                 break;
             case ACTIVE:
                 if (rec_arr_len == 2 & serialOpenFlag) {
-                    if (rec_arr[0].equals("M")) {
+                    if (rec_arr[0].equals("YR")) {
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
                                 tv_machine_row.setText(rec_arr[1]);
                             }
                         });
-                    } else if (rec_arr[0].equals("E")) {
+                    } else if (rec_arr[0].equals("ED")) {
                         serialSendData("Serial trans to Edit State!");
                         transitionToNextState();
-                    } else if (rec_arr[0].equals("R")) {
+                    } else if (rec_arr[0].equals("RD")) {
                         if (roi_flag){
                             detect_flag = true;
                             serialSendData("Start detect");
                         }else {
                             serialSendData("Roi range not set");
                         }
-                    } else if (rec_arr[0].equals("S")) {
+                    } else if (rec_arr[0].equals("ST")) {
                         detect_flag = false;
                         serialSendData("Detect stop");
+                    } else if (rec_arr[0].equals("PA")){
+                        String msg_current_par = getMsgCurrentPar();
+                        serialSendData(msg_current_par);
+                    }
+                    else if (rec_arr[0].equals("RC")) {
+                        recordFlag = true;
+                        serialSendData("Record Start");
+                    } else if (rec_arr[0].equals("RS")){
+                        recordFlag = false;
+                        serialSendData("Record Stop");
                     }
                 }else {
                     runOnUiThread(new Runnable() {
@@ -1054,11 +1315,11 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
                 break;
             case EDIT:
                 if (rec_arr_len == 2 & serialOpenFlag) {
-                    if (rec_arr[0].equals("B")) {
+                    if (rec_arr[0].equals("BA")) {
                         serialSendData("Serial back to Activity State!");
                         transitionToNextState();
                     }
-                    if (rec_arr[0].equals("R")) {
+                    if (rec_arr[0].equals("RO")) {
 //                        调节ROI区域
                         String[] rec_roi_arr = rec_arr[1].split(",");
                         if (rec_roi_arr.length != 8) {
@@ -1094,7 +1355,7 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
                             serialSendData(rec_msg + "\n");
                             roi_flag = true;
                         }
-                    } else if (rec_arr[0].equals("C")) {
+                    } else if (rec_arr[0].equals("CA")) {
 //                        调节相机参数
                         String[] rec_camera_arr = rec_arr[1].split(",");
                         if (rec_camera_arr.length != 4) {
@@ -1122,7 +1383,7 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
                                 throw new RuntimeException(e);
                             }
                         }
-                    } else if (rec_arr[0].equals("D")) {
+                    } else if (rec_arr[0].equals("DE")) {
                         String[] rec_detect_arr = rec_arr[1].split(",");
                         if (rec_detect_arr.length != 3) {
                             serialSendData("Detect input length error!");
@@ -1131,6 +1392,14 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
                                 detect_par_arr[i] = Float.parseFloat(rec_detect_arr[i]);
                             }
                         }
+                    }  else if (rec_arr[0].equals("NA")) {
+                        recordFileName = rec_arr[1];
+                        if (myUtil.createFolder(getSave_file_path+"/"+recordFileName)) {
+                            yarnRow = 0;
+                            serialSendData("Set Record File Name:" + recordFileName);
+                        }
+                    } else if (rec_arr[0].equals("SA")) {
+                        saveCameraPar();
                     } else {
                         runOnUiThread(new Runnable() {
                             @Override
@@ -1142,6 +1411,23 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
                 }
                 break;
         }
+    }
+
+    @NonNull
+    private String getMsgCurrentPar() {
+        String msg_current_par = "roi_range: ";
+        for (int i = 0; i < 4; i++) {
+            msg_current_par = msg_current_par + arr_roi1[i] + ",";
+        }
+        for (int i = 0; i < 4; i++) {
+            msg_current_par = msg_current_par + arr_roi2[i] + ",";
+        }
+        msg_current_par = msg_current_par + "\n camera_par: E:" + camera_exposureTime + " ISO:" + camera_Iso + " focus:"+ camera_focusDistance;
+        msg_current_par = msg_current_par + "\n detect_par: ";
+        for (int i = 0; i < 3; i++) {
+            msg_current_par = msg_current_par + detect_par_arr[i];
+        }
+        return msg_current_par;
     }
 }
 

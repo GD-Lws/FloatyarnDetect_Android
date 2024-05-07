@@ -11,15 +11,17 @@
           android:layout_weight="1.7"
           android:orientation="horizontal"
           >
-        <TextView
+
+        <Spinner
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:text="CameraInfo"
             android:textSize="12dp"
             android:textColor="#000000"
-            android:id="@+id/textview_camerainfo"
+            android:entries="@array/Mode"
+            android:id="@+id/Spinner_mode"
             />
+          <!--            android:text="ModeSelect"-->
           <TextView
               android:layout_width="match_parent"
               android:layout_height="match_parent"
@@ -92,22 +94,22 @@
           <Button
               android:layout_width="match_parent"
               android:layout_height="match_parent"
-              android:text="Roi"
+              android:text="RECORD"
               android:textColor="#000000"
               android:textSize="15dp"
               android:background="#FFFFFF"
-              android:id="@+id/button_set"
+              android:id="@+id/button_record"
               android:layout_weight="1"
               />
-          <Button
+          <Spinner
               android:layout_width="match_parent"
               android:layout_height="match_parent"
-              android:text="Camera"
               android:textSize="15dp"
               android:textColor="#000000"
-              android:id="@+id/button_camera"
+              android:id="@+id/Spinner_Setpar"
               android:layout_weight="1"
               android:background="#FFFFFF"
+              android:entries="@array/ParSet"
               />
       </LinearLayout>
 </LinearLayout>

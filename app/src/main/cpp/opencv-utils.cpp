@@ -88,15 +88,33 @@ bool myDetect(Mat& roi_img, Mat& result_img, double thresh, double thresh_maxval
     result_img = roi_img.clone(); // 克隆输入图像作为输出图像
     for (const auto& contour : contours) {
         cv::Rect bounding_rect = cv::boundingRect(contour);
-        if (bounding_rect.height < threshold_height) {
+        if (bounding_rect.width < threshold_height) {
             cv::drawContours(result_img, std::vector<std::vector<cv::Point>>{contour}, -1,
                              cv::Scalar(0, 255, 255), -1);  // 填充绿色
         } else {
             cv::drawContours(result_img, std::vector<std::vector<cv::Point>>{contour}, -1,
                              cv::Scalar(255, 0, 255), -1);  // 填充红色
-            cv::rectangle(result_img, bounding_rect, cv::Scalar(0, 0, 255), 5);  // 画红色矩形框
+            cv::rectangle(result_img, bounding_rect, cv::Scalar(0, 0, 255), 2);  // 画红色矩形框
+//            cv::Mat det_range = roi_img(bounding_rect);
+//            detected_rois.push_back(det_range.clone()); // 添加ROI的克隆，以确保独立性
             detect_flag = true;
         }
     }
     return detect_flag;
+}
+
+
+
+
+double calTemplateValue(Mat& targetImage, Mat& templateImage){
+    // 创建结果矩阵
+    Mat resultImage;
+    // 进行模板匹配
+    matchTemplate(targetImage, templateImage, resultImage, TM_CCOEFF_NORMED);
+    // 找到最佳匹配位置
+    Point maxLoc;
+    double maxVal;
+    minMaxLoc(resultImage, NULL, &maxVal, NULL, &maxLoc);
+    // 返回最大匹配值
+    return maxVal;
 }

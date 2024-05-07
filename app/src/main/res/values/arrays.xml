@@ -8,4 +8,17 @@
         <item>76800</item>
         <item>115200</item>
     </string-array>
+
+    <string-array name= "Mode">
+        <item>Detect</item>
+        <item>Compare</item>
+        <item>Record</item>
+    </string-array>
+
+    <string-array name= "ParSet">
+        <item>CAMERA</item>
+        <item>ROI</item>
+        <item>DETECT</item>
+        <item>FILE</item>
+    </string-array>
 </resources>

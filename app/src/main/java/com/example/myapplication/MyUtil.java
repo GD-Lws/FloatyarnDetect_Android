@@ -4,19 +4,27 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.media.Image;
+import android.net.Uri;
+import android.provider.MediaStore;
 import android.util.Log;
+import android.widget.Toast;
 
 import org.opencv.android.Utils;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 
+import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
@@ -25,7 +33,7 @@ public class MyUtil {
 
     }
     private static final int REQUEST_CODE_PERMISSIONS = 100;
-
+    private static final String FAG = "FileTest";
     // 所需的权限列表
     private static final String[] REQUIRED_PERMISSIONS = new String[]{
             Manifest.permission.WRITE_EXTERNAL_STORAGE,
@@ -116,6 +124,50 @@ public class MyUtil {
         return mat;
     }
 
+    @NonNull
+    public static BufferedWriter getBufferedWriter(int[] roi1, int[] roi2, String filePath) throws IOException {
+        File file = new File(filePath);
+        FileWriter fw = new FileWriter(file);
+        BufferedWriter bw = new BufferedWriter(fw);
+        // 写入ROI1坐标
+        bw.write("ROI1: ");
+        for (int i = 0; i < roi1.length; i++) {
+            bw.write(roi1[i] + " ");
+        }
+        bw.newLine();
+        // 写入ROI2坐标
+        bw.write("ROI2: ");
+        for (int i = 0; i < roi2.length; i++) {
+            bw.write(roi2[i] + " ");
+        }
+        bw.newLine();
+        return bw;
+    }
+
+
+    public boolean createFolder(String folderPath) {
+        boolean create_folder = false;
+        File folder = new File(folderPath);
+        if (!folder.exists()) {
+            File result_1_folder = new File(folderPath+"/roi1");
+            File result_2_folder = new File(folderPath+"/roi2");
+            File result_det_folder = new File(folderPath+"/det");
+            boolean created = folder.mkdirs(); // 创建文件夹
+            boolean cre1 = result_1_folder.mkdirs();
+            boolean cre2 = result_2_folder.mkdirs();
+            boolean cre_det = result_det_folder.mkdirs();
+            if (created & cre1 & cre2 & cre_det) {
+                Log.d(FAG, "Folder created: " + folderPath);
+                create_folder = true;
+            } else {
+                Log.e(FAG, "Failed to create folder: " + folderPath);
+            }
+        } else {
+            Log.d(FAG, "Folder already exists: " + folderPath);
+        }
+        return create_folder;
+    }
+
     public static boolean checkPermissions(Activity activity) {
         for (String permission : REQUIRED_PERMISSIONS) {
             if (activity.checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
@@ -178,8 +230,8 @@ public class MyUtil {
     private static final float MIN_FOCUS_DISTANCE = 0.2f;
     private static final float MAX_FOCUS_DISTANCE = 10.0f;
 
-    private static final float MIN_ZOOM_RATIO = 0.1f;
-    private static final float MAX_ZOOM_RATIO = 1.0f;
+    private static final float MIN_ZOOM_RATIO = 1.0f;
+    private static final float MAX_ZOOM_RATIO = 10.0f;
 
     boolean isCameraParametersValid(long exposureTime, int iso, float focusDistance, float zoomRatio) {
         // 检查曝光时间是否在合法范围内

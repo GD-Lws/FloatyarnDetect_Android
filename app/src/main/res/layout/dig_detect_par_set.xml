@@ -3,69 +3,49 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical">
-    <TextView
+       <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="曝光时间:"
+        android:text="识别参数1:"
         android:textSize="20dp"
         />
 
     <EditText
-        android:id="@+id/et_exposuretime"
+        android:id="@+id/et_par_one"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textSize="20dp"
-        android:hint="100000~32000000000"
-        android:inputType="number"
-        />
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="感光度:"
-        android:textSize="20dp"
-        />
-
-    <EditText
-        android:id="@+id/et_iso"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="100~3200"
-        android:textSize="20dp"
-        android:inputType="number"
-
-        />
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="焦距:"
-        android:textSize="20dp"
-        />
-    <EditText
-        android:id="@+id/et_focusdistance"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="0.2~10.0"
-        android:textSize="20dp"
+        android:text="30.0"
         android:inputType="numberDecimal"
         />
-
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="缩放:"
+        android:text="识别参数2:"
         android:textSize="20dp"
         />
 
     <EditText
-        android:id="@+id/et_zoomarea"
+        android:id="@+id/et_par_two"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="1.0~10.0"
         android:textSize="20dp"
+        android:text="255.0"
         android:inputType="numberDecimal"
         />
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="识别参数3:"
+        android:textSize="20dp"
+        />
 
-
-
+    <EditText
+        android:id="@+id/et_par_three"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="20dp"
+        android:inputType="numberDecimal"
+        android:text="0.4"
+        />
 </LinearLayout>
