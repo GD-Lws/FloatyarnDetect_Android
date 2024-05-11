@@ -78,6 +78,7 @@ import android.Manifest;
 
 import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
+import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import android.graphics.Rect;
 import android.widget.Toast;
@@ -87,6 +88,7 @@ import com.hoho.android.usbserial.driver.UsbSerialPort;
 import com.hoho.android.usbserial.driver.UsbSerialProber;
 import com.hoho.android.usbserial.util.SerialInputOutputManager;
 
+import org.opencv.imgproc.Imgproc;
 import org.opencv.videoio.VideoCapture;
 import org.opencv.videoio.Videoio;
 
@@ -95,6 +97,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
 import java.lang.reflect.Executable;
 import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
@@ -478,7 +481,7 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
 
 //    设置相机参数
     private void setCameraPar(){
-        Range<Integer> fpsRange = new Range(120, 120);
+        Range<Integer> fpsRange = new Range(240, 240);
         mPreviewBuilder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, fpsRange);
         mPreviewBuilder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF);
         mPreviewBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_OFF);
@@ -524,95 +527,57 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
             e.printStackTrace();
         }
     }
+
+    private Bitmap resultBitmap = null, grayscaleBitmap = null;
     private final ImageReader.OnImageAvailableListener mOnImageAvailableListener = new ImageReader.OnImageAvailableListener() {
         @Override
         public void onImageAvailable(ImageReader reader) {
-            Image image = reader.acquireLatestImage();
-            if (image != null) {
-                Image.Plane[] planes = image.getPlanes();
+            Image readerImage = reader.acquireLatestImage();
+            if (readerImage != null) {
+                Image.Plane[] planes = readerImage.getPlanes();
                 // 获取 Y 分量的信息
                 Image.Plane yPlane = planes[0];
                 ByteBuffer yBuffer = yPlane.getBuffer();
                 int yPixelStride = yPlane.getPixelStride();
                 int yRowStride = yPlane.getRowStride();
-                int yWidth = image.getWidth();
-                int yHeight = image.getHeight();
+                int yWidth = readerImage.getWidth();
+                int yHeight = readerImage.getHeight();
 
-                // 创建灰度 Bitmap，调换宽高
-                Bitmap grayscaleBitmap = Bitmap.createBitmap(yHeight, yWidth, Bitmap.Config.ARGB_8888);
-                // 遍历 Y 分量并填充到 Bitmap 中
-                int[] pixels = new int[yWidth * yHeight];
-                Bitmap resultBitmap;
-                int pixelIndex = 0;
-                for (int col = 0; col < yWidth; col++) {
-                    int xOffset = col * yPixelStride; // 计算列偏移量
-                    for (int row = yHeight - 1; row >= 0; row--) { // 从底部到顶部
-                        int y;
-                        int yOffset = row * yRowStride;
-                        if (yPixelStride == 1) {
-                            // 如果像素跨度为 1，则直接从缓冲区中获取 Y 分量值
-                            y = yBuffer.get(yOffset + xOffset) & 0xFF;
-                        } else {
-                            // 如果像素跨度大于 1，则需要考虑像素跨度对应的偏移量
-                            y = yBuffer.get(yOffset + xOffset / yPixelStride) & 0xFF;
-                        }
-                        // 创建灰度像素
-                        pixels[pixelIndex++] = 0xFF000000 | (y << 16) | (y << 8) | y;
-                    }
+                // 创建字节数组来存储 Y 数据
+                byte[] yData = new byte[yBuffer.remaining()];
+                yBuffer.get(yData);
+
+                // 创建 Mat 对象
+                Mat yMat = new Mat(yHeight + yHeight / 2, yWidth, CvType.CV_8UC1);
+                int offset = 0;
+                for (int row = 0; row < yHeight; row++) {
+                    yMat.put(row, 0, yData, offset, yWidth);
+                    offset += yRowStride;
                 }
-                // 设置 Bitmap 的像素
-                grayscaleBitmap.setPixels(pixels, 0, yHeight, 0, 0, yHeight, yWidth);
-                boolean detect_error = false;
-                if (roi_flag){
-                    if (myUtil.checkRoiRange(yWidth, yWidth, arr_roi1) && myUtil.checkRoiRange(yWidth, yWidth, arr_roi2)) {
-                        resultBitmap = Bitmap.createBitmap(yHeight, yWidth, Bitmap.Config.ARGB_8888);
-                        if (detect_flag){
-                            if (recordFlag){
-                                detect_error = detectYarnInImage(grayscaleBitmap, resultBitmap, arr_roi1, arr_roi2, detect_par_arr, getSave_file_path + "/" + recordFileName, yarnRow);
-                                yarnRow = yarnRow + 1;
-                            }else {
-                                detect_error = detectYarnInImage(grayscaleBitmap, resultBitmap, arr_roi1, arr_roi2, detect_par_arr, "N", 0);
-                            }
-                            Log.i(CAG, "Detect flag " + detect_error);
-                            if (detect_flag & currentState == serialState.ACTIVE){
-                                serialSendData("F:" + detect_error);
-                            }
-                        }else {
-                            drawRoiRange(grayscaleBitmap, resultBitmap, arr_roi1, arr_roi2);
-                        }
-                    }else {
-                        roi_flag = false;
-                        resultBitmap = grayscaleBitmap.copy(grayscaleBitmap.getConfig(), true);
-                    }
-                }else {
-                   resultBitmap = grayscaleBitmap.copy(grayscaleBitmap.getConfig(), true);
-                }
+
+                // 转换为灰度图
+                Mat grayscaleMat = new Mat();
+                Imgproc.cvtColor(yMat, grayscaleMat, Imgproc.COLOR_YUV2GRAY_NV21);
+
+                // 创建 Bitmap 对象
+                Bitmap bitmap = Bitmap.createBitmap(yWidth, yHeight, Bitmap.Config.ARGB_8888);
+
+                // 将灰度图像复制到 Bitmap 中
+                Utils.matToBitmap(grayscaleMat, bitmap);
+
                 // 在 UI 线程中更新 ImageView
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
-                        drawBitmapToSurfaceTexture(resultBitmap);
+                        drawBitmapToSurfaceTexture(bitmap);
                     }
                 });
+
                 // 释放 Image 资源
-                image.close();
+                readerImage.close();
             }
         }
     };
-
-    private void writeROIToTxt(int[] roi1, int[] roi2) {
-        // 指定txt文件路径
-        String filePath = getSave_file_path + "/" + recordFileName + "/roi_coordinates.txt";
-        try {
-            BufferedWriter bw = myUtil.getBufferedWriter(roi1, roi2, filePath);
-            // 关闭文件写入对象
-            bw.close();
-            Log.d(FAG, "ROI坐标已写入到txt文件：" + filePath);
-        } catch (IOException e) {
-            e.printStackTrace();
-            Log.e(FAG, "写入ROI坐标时出错：" + e.getMessage());
-        }
-    }
 
     private void drawBitmapToSurfaceTexture(Bitmap bitmap) {
         // 获取 SurfaceTexture
@@ -870,11 +835,15 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
                         }
                     }
                     String[] getDetString = cameraSP.getString("detArray","").split(",");
-                    if (getDetString.length > 0) {
-                        for (int i = 0; i < 3; i++) {
-                            detect_par_arr[i] = Float.parseFloat(getRoiString[i]);
-                        }
-                    }
+//                    if (getDetString.length > 0) {
+//                        for (int i = 0; i < 3; i++) {
+//                            detect_par_arr[i] = Float.parseFloat(getRoiString[i]);
+//                        }
+//                    }
+//                    editor.putFloat("det_par_0",detect_par_arr[0]);
+                    detect_par_arr[0] = cameraSP.getFloat("det_par_0", 30.0f);
+                    detect_par_arr[1] = cameraSP.getFloat("det_par_1", 255.0f);
+                    detect_par_arr[2] = cameraSP.getFloat("det_par_2", 0.3f);
                     Toast.makeText(MainActivity.this, "加载参数成功", Toast.LENGTH_SHORT).show();
                 }
             });
@@ -979,7 +948,7 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
         result_string = result_string + "Iso:"+ camera_Iso + " Fd:" + camera_focusDistance + " ET:" + camera_exposureTime + " ZR:" + camera_zoomRatio;
         result_string = result_string + "\n";
         String roi_string = "";
-        String det_string = "";
+//        String det_string = "";
         for (int i = 0; i < 8; i++) {
             if (i < 4) roi_string = roi_string + arr_roi1[i]+",";
             else {
@@ -988,12 +957,30 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
         }
         result_string = result_string + " Ro:" + roi_string + "\n";
         editor.putString("roiArray", roi_string);
-        for (int i = 0; i < 3; i++) {
-            det_string = det_string + detect_par_arr + ",";
-        }
-        result_string = result_string + " De:" + det_string + "\n";
-        editor.putString("detArray", det_string);
+//        for (int i = 0; i < 3; i++) {
+//            det_string = det_string + String.valueOf(detect_par_arr) + ",";
+//        }
+//        result_string = result_string + " De:" + det_string + "\n";
+//        editor.putString("detArray", det_string);
+        editor.putFloat("det_par_0",detect_par_arr[0]);
+        editor.putFloat("det_par_1",detect_par_arr[1]);
+        editor.putFloat("det_par_2",detect_par_arr[2]);
+        result_string = result_string + String.format("%.2f", detect_par_arr[0]) + "," + String.format("%.2f", detect_par_arr[1]) + "," + String.format("%.2f", detect_par_arr[2]);
         editor.apply();
+
+        File file = new File(getSave_file_path, recordFileName + ".txt");
+
+        try (FileOutputStream fos = new FileOutputStream(file);
+             OutputStreamWriter osw = new OutputStreamWriter(fos);
+             BufferedWriter bw = new BufferedWriter(osw)) {
+
+            // 写入数据到文件
+            bw.write("camera_par: " + result_string);
+            bw.newLine();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
         return result_string;
     }
     private void openCamera(int width, int height) {
