@@ -156,7 +156,6 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
     private boolean roi_flag = false;
     private boolean detect_flag = false;
     //    文件选取或者相机获取
-//    private int roi_r_x,roi_r_y,roi_r_w,roi_r_h, roi_l_x,roi_l_y,roi_l_w,roi_l_h;
     private int[] arr_roi1 = new int[]{512, 200, 722, 380};
     private int[] arr_roi2 = new int[]{512, 400, 662, 580};
     private float[] detect_par_arr = new float[]{40.0f, 255.0f, 0.4f};
@@ -164,10 +163,9 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
     private TextureView mCameraPreview,mResultPreview;
     private Size mPreviewSize;
     private TextView tv_machine_row;
-    private MyUtil myUtil = new MyUtil();
+    private MyUtil myUtil;
     private Spinner modeSelect;
 //    视频录制
-    private MediaRecorder mediaRecorder;
 
 //    串口配置
     private UsbManager usbManager = null;
@@ -1177,10 +1175,16 @@ public class MainActivity extends Activity implements  View.OnClickListener,Text
             }
             @Override
             public void onRunError(Exception e) {
-                Log.e(IAG, "usb 断开了" );
-                Toast.makeText(MainActivity.this, "Serial rec error", Toast.LENGTH_SHORT).show();
-                serialDisconnect();
-                e.printStackTrace();
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Log.e(IAG, "usb 断开了" );
+                        Toast.makeText(MainActivity.this, "Serial rec error", Toast.LENGTH_SHORT).show();
+                        serialDisconnect();
+                        e.printStackTrace();
+                    }
+                });
+
             }
         });
         usbIoManager.setReadBufferSize(8192);
