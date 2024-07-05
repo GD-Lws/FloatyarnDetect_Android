@@ -18,11 +18,15 @@ import org.opencv.android.Utils;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
@@ -144,6 +148,32 @@ public class MyUtil {
         return bw;
     }
 
+    // 读取文件并按行分块存储，附加包号
+    public List<List<String>> readFileAndSplitIntoChunks(String filePath, int linesPerChunk) {
+        List<List<String>> chunks = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new FileReader(new File(filePath)))) {
+            String line;
+            int chunkId = 0;
+            List<String> chunk = new ArrayList<>();
+            chunk.add("ChunkID:" + chunkId); // 附加包号
+            while ((line = reader.readLine()) != null) {
+                chunk.add(line);
+                if (chunk.size() > linesPerChunk) {
+                    chunks.add(chunk);
+                    chunkId++;
+                    chunk = new ArrayList<>();
+                    chunk.add("ChunkID:" + chunkId); // 附加包号
+                }
+            }
+            // 添加最后的块
+            if (!chunk.isEmpty()) {
+                chunks.add(chunk);
+            }
+        } catch (IOException e) {
+            Log.e(DAG, "Error reading file", e);
+        }
+        return chunks;
+    }
 
     public boolean createFolder(String folderPath) {
         boolean create_folder = false;
