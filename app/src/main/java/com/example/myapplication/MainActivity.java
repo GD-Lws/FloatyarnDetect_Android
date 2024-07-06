@@ -119,8 +119,8 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     private float camera_focusDistance = 4.12f, camera_zoomRatio = 1.0F;
     private CameraCharacteristics cameraCharacteristics;
     private CameraManager cameraManager;
-    private HandlerThread mCameraThread, mImageThread;
-    private Handler mCameraHandler, mImageHandler;
+    private HandlerThread mCameraSessionThread, mImageThread, mCameraStateThread;
+    private Handler mCameraSessionHandler, mImageHandler, mCameraStateHandler;
     private String cameraId;
     private CameraDevice mCameraDevice;
     private CaptureRequest.Builder mPreviewBuilder;
@@ -354,17 +354,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     strSaveToFile(saveFilePath, saveFileName,bitmapString);
                     List<List<String>> chunks = myUtil.readFileAndSplitIntoChunks(saveFilePath + saveFileName, linesPerChunks);
                     serSendChunks(chunks);
-//                    Log.d("ByteArrayLog", "Base64 encoded: " + base64String);
-//                    Log.d(DAG,matByteArray);
                     flagGetImage = false;
-//                    if (flag_serConnect) {
-//                        new Thread(new Runnable() {
-//                            @Override
-//                            public void run() {
-////                                SerSendPicture(bitmapString);
-//                            }
-//                        }).start();
-//                    }
                 }
                 readerImage.close();
                 }
@@ -373,10 +363,15 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
 
     private void startBackgroundThread() {
         // 相机线程
-        if (mCameraThread == null) {
-            mCameraThread = new HandlerThread("CameraBackground");
-            mCameraThread.start();
-            mCameraHandler = new Handler(mCameraThread.getLooper());
+        if (mCameraSessionThread == null) {
+            mCameraSessionThread = new HandlerThread("CameraSessionBackground");
+            mCameraSessionThread.start();
+            mCameraSessionHandler = new Handler(mCameraSessionThread.getLooper());
+        }
+        if (mCameraStateThread == null) {
+            mCameraStateThread = new HandlerThread("CameraStateBackground");
+            mCameraStateThread.start();
+            mCameraStateHandler = new Handler(mCameraStateThread.getLooper());
         }
         // ImageReader线程
         if (mImageThread == null) {
@@ -387,12 +382,22 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         }
 
         private void stopBackgroundThread() {
-            if (mCameraThread != null) {
-                mCameraThread.quitSafely();
+            if (mCameraSessionThread != null) {
+                mCameraSessionThread.quitSafely();
                 try {
-                    mCameraThread.join();
-                    mCameraThread = null;
-                    mCameraHandler = null;
+                    mCameraSessionThread.join();
+                    mCameraSessionThread = null;
+                    mCameraSessionHandler = null;
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            if (mCameraStateThread != null) {
+                mCameraStateThread.quitSafely();
+                try {
+                    mCameraStateThread.join();
+                    mCameraStateThread = null;
+                    mCameraStateHandler = null;
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
@@ -493,7 +498,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                         mCaptureSession = cameraCaptureSession;
                         Log.d(CAG, "createCaptureSession onConfigured");
                         try {
-                            mCaptureSession.setRepeatingRequest(mPreviewBuilder.build(), mCaptureCallback, mCameraHandler);
+                            mCaptureSession.setRepeatingRequest(mPreviewBuilder.build(), mCaptureCallback, mCameraSessionHandler);
                         } catch (CameraAccessException e) {
                             e.printStackTrace();
                         }
@@ -503,7 +508,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     public void onConfigureFailed(@NonNull CameraCaptureSession cameraCaptureSession) {
                         Toast.makeText(getApplicationContext(), "Failed", Toast.LENGTH_SHORT).show();
                     }
-                }, mCameraHandler);
+                }, mCameraSessionHandler);
             } catch (CameraAccessException e) {
                 e.printStackTrace();
             }
@@ -520,7 +525,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     requestPermissions(new String[]{android.Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE}, 1001);
                 }
                 Log.d(CAG, "开启相机");
-                cameraManager.openCamera(cameraId, cameraStateCallback, null);
+                cameraManager.openCamera(cameraId, cameraStateCallback, mCameraStateHandler);
             } catch (CameraAccessException e) {
                 e.printStackTrace();
             }
@@ -677,17 +682,29 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 chunkBuilder.append(line).append("\n");
             }
             String chunkString = chunkBuilder.toString();
-            String tempFileName = "temp" + fileIndex + ".txt";
 
-            // 发送chunk
-            serSend(chunkString);
-            // 等待响应信号
-            if (!waitForAck()) {
-                Log.e(DAG, "Failed to receive acknowledgment from MCU for chunk: " + fileIndex);
-                break; // 若未收到响应，停止发送
+            // 发送chunk，并设置重发次数
+            int retries = 3; // 设置重发次数
+            boolean sentSuccessfully = false;
+            for (int attempt = 0; attempt < retries; attempt++) {
+                serSend(chunkString);
+                // 等待响应信号
+                if (waitForAck()) {
+                    sentSuccessfully = true;
+                    break; // 成功收到响应信号，跳出重发循环
+                } else {
+                    Log.e(DAG, "Failed to receive acknowledgment from MCU for chunk: " + fileIndex + ", attempt " + (attempt + 1));
+                }
             }
+
+            if (!sentSuccessfully) {
+                Log.e(DAG, "Failed to send chunk after " + retries + " attempts. Stopping transmission.");
+                break; // 若无法发送成功，停止发送
+            }
+
             fileIndex++;
         }
+        serSend("END");
     }
 
     // 等待单片机响应信号
@@ -799,7 +816,6 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                         } else if (rec_arr_len == 2 & rec_arr[0].equals("PC")) {
                             if (flagCameraOpen) {
                                 serNowState = serialState.Picture;
-                                ackReceived = false;
                                 serSend("PIC");
                             } else {
                                 serOpenCamera();
@@ -808,6 +824,10 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                         }
                         break;
                     case Picture:
+                        if (rec_arr[0].equals("STA")){
+                            ackReceived = false;
+                            flagGetImage = true;
+                        }
                         if (rec_arr[0].equals("ACK")) {
                             ackReceived = true;
                         } else if (rec_arr[0].equals("END")) {
