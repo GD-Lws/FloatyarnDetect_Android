@@ -11,22 +11,29 @@ import android.graphics.Matrix;
 import android.media.Image;
 import android.net.Uri;
 import android.provider.MediaStore;
+import android.util.Base64;
 import android.util.Log;
 import android.widget.Toast;
 
 import org.opencv.android.Utils;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.imgcodecs.Imgcodecs;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
@@ -175,6 +182,59 @@ public class MyUtil {
         return chunks;
     }
 
+//    public byte[] saveMatAsJpg(Mat inputMat){
+//        ByteArrayOutputStream bass = new ByteArrayOutputStream();
+//        boolean isSuccess = Imgcodecs.imencode(".jpg", inputMat, bass);
+//        if (!isSuccess) {
+//            // 处理错误
+//            Log.e("ImageConversion", "Failed to encode image to JPG");
+//        }
+//        return bass.toByteArray();
+//    }
+
+    public String bitmapToString(Bitmap bitmap) {
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream);
+        byte[] byteArray = byteArrayOutputStream.toByteArray();
+        return Base64.encodeToString(byteArray, Base64.DEFAULT);
+    }
+
+    public byte[] saveBitmapAsJpg(Bitmap bitmap){
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 100, byteArrayOutputStream);
+        byte[] jpegData = byteArrayOutputStream.toByteArray();
+        return jpegData;
+    }
+
+    private void saveBitmapAsFile(Bitmap bitmap, String saveFilePath) {
+        FileOutputStream out = null;
+        File file = null;
+        try {
+            // 确保存储目录存在
+            File storageDir = new File(saveFilePath);
+            if (!storageDir.exists()) {
+                storageDir.mkdirs();
+            }
+
+            // 创建文件
+            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+            String fileName = "grayscale_image_" + timeStamp + ".png";
+            file = new File(storageDir, fileName);
+            out = new FileOutputStream(file);
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out); // 保存为 PNG 文件
+            Log.d(FAG, "Saved file path: " + file.getAbsolutePath());
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                if (out != null) {
+                    out.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
     public boolean createFolder(String folderPath) {
         boolean create_folder = false;
         File folder = new File(folderPath);

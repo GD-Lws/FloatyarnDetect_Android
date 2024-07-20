@@ -10,6 +10,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.ImageFormat;
 import android.graphics.Rect;
+import android.graphics.Region;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
@@ -56,6 +57,7 @@ import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 
 import java.io.ByteArrayOutputStream;
@@ -91,7 +93,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         READY,
         ACTIVE,
         EDIT,
-        Picture
+        PIC
     }
     private serialState serNowState = serialState.CLOSE;
     private SerialInputOutputManager usbIoManager;
@@ -106,17 +108,19 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     private EditText et_ser_send;
     private static boolean flag_serConnect = false;
     private static final int WRITE_WAIT_MILLIS = 2000;
-    private int baudRate = 921600;
-    private int linesPerChunks = 50;
+    private int baudRate = 115200;
+    private int linesPerChunks = 30;
+    private static final int CHUNK_SIZE = 10240; // 定义每个包的大小
+
 /************************************************************************/
 
-    /***************   Camera Value   *************************************/
+/***************   Camera Value   *************************************/
 
     private CameraCaptureSession mCaptureSession;
 
     private long camera_exposureTime = new Long(7104250);
     private int camera_Iso = 1200;
-    private float camera_focusDistance = 4.12f, camera_zoomRatio = 1.0F;
+    private float camera_focusDistance = 4.12f, camera_zoomRatio = 5.0F;
     private CameraCharacteristics cameraCharacteristics;
     private CameraManager cameraManager;
     private HandlerThread mCameraSessionThread, mImageThread, mCameraStateThread;
@@ -145,15 +149,26 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     // 工具类
     private MyUtil myUtil;
     private static Bitmap bm_roi_photo;
-    private static final String FAG = "FileTest";
+    private static final String FAG = "FileDebug";
     private static final String CAG = "CameraDebug";
-    private static final String SAG = "SerialTest";
-    private static final String DAG = "ImageTest";
+    private static final String SAG = "SerialDebug";
+    private static final String DAG = "DetectDebug";
+    private static final String STG = "StateDebug";
     private String saveFilePath;
 //    传输图标响应标志
     private volatile boolean ackReceived = false;
-    /************************************************************************/
+/************************************************************************/
 
+/***************   Transmission Identifier   *************************************/
+    String strHeartBeat = "cixing";
+    String strPicReady = "PICREADY";
+    String strPicACK = "PICACK";
+    String strRE2AC = "R2AC";
+    String strRE2ED = "R2ED";
+    String strOP2RE = "O2RE";
+    String strAC2RE = "A2RE";
+
+ /************************************************************************/
     @SuppressLint("MissingInflatedId")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -168,7 +183,6 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             Toast.makeText(this, "检测权限未授权", Toast.LENGTH_SHORT).show();
         }
         InitView();
-
         cameraManager = (CameraManager)getApplication().getSystemService(Context.CAMERA_SERVICE);
         try{
             cameraId = cameraManager.getCameraIdList()[0];
@@ -251,7 +265,6 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         }
     }
 
-
     @Override
     public void onResume() {
         super.onResume();
@@ -274,42 +287,6 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         flagCameraOpen = true;
     }
 
-    private void saveBitmapAsFile(Bitmap bitmap) {
-        FileOutputStream out = null;
-        File file = null;
-        try {
-            // 确保存储目录存在
-            File storageDir = new File(saveFilePath);
-            if (!storageDir.exists()) {
-                storageDir.mkdirs();
-            }
-
-            // 创建文件
-            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
-            String fileName = "grayscale_image_" + timeStamp + ".png";
-            file = new File(storageDir, fileName);
-            out = new FileOutputStream(file);
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out); // 保存为 PNG 文件
-            Log.d(FAG, "Saved file path: " + file.getAbsolutePath());
-        } catch (IOException e) {
-            e.printStackTrace();
-        } finally {
-            try {
-                if (out != null) {
-                    out.close();
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
-    private String bitmapToString(Bitmap bitmap) {
-        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream);
-        byte[] byteArray = byteArrayOutputStream.toByteArray();
-        return Base64.encodeToString(byteArray, Base64.DEFAULT);
-    }
 
     private final ImageReader.OnImageAvailableListener mOnImageAvailableListener = new ImageReader.OnImageAvailableListener() {
         @Override
@@ -347,13 +324,15 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 // 将灰度图像复制到 Bitmap 中
                 Utils.matToBitmap(grayscaleMat, bitmap);
                 if (flagGetImage) {
-                    saveBitmapAsFile(bitmap);
-                    Log.d(DAG, "Save picture success!!");
-                    String saveFileName = "test_0942" + ".txt";
-                    String bitmapString = bitmapToString(bitmap);
-                    strSaveToFile(saveFilePath, saveFileName,bitmapString);
-                    List<List<String>> chunks = myUtil.readFileAndSplitIntoChunks(saveFilePath + saveFileName, linesPerChunks);
-                    serSendChunks(chunks);
+//                    saveBitmapAsFile(bitmap);
+                    byte[] jpgByteArray = myUtil.saveBitmapAsJpg(bitmap);
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(MainActivity.this, "length:"+jpgByteArray.length, Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                    sendByteArray(jpgByteArray);
                     flagGetImage = false;
                 }
                 readerImage.close();
@@ -633,6 +612,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 serStatus("Serial connect!");
                 flag_serConnect = true;
                 transToNextStatus();
+                startHeartbeatThread();
             } else {
                 Toast.makeText(MainActivity.this, "currentItem.driver == null", Toast.LENGTH_SHORT).show();
                 serStatus("Serial driver is null!");
@@ -673,43 +653,89 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 Log.d("Serial", "Serial send error!");
             }
         }
-
-    private void serSendChunks(List<List<String>> chunks) {
-        int fileIndex = 0;
-        for (List<String> chunk : chunks) {
-            StringBuilder chunkBuilder = new StringBuilder();
-            for (String line : chunk) {
-                chunkBuilder.append(line).append("\n");
+        void serSendRepeat(String str){
+            if (flag_serConnect && usbSerialPort != null) {
+                byte[] data = (str + '\n').getBytes();
+                try {
+                    for (int i = 0; i < 3; i++) {
+                        usbSerialPort.write(data, WRITE_WAIT_MILLIS);
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            } else {
+                Log.d("Serial", "Serial send error!");
             }
-            String chunkString = chunkBuilder.toString();
+        }
 
-            // 发送chunk，并设置重发次数
-            int retries = 3; // 设置重发次数
-            boolean sentSuccessfully = false;
-            for (int attempt = 0; attempt < retries; attempt++) {
-                serSend(chunkString);
-                // 等待响应信号
-                if (waitForAck()) {
-                    sentSuccessfully = true;
-                    break; // 成功收到响应信号，跳出重发循环
+    private void sendByteArray(byte[] inputArray) {
+        int totalSize = inputArray.length;
+        int bytesSent = 0;
+
+        try {
+            while (bytesSent < totalSize) {
+                int chunkEnd = Math.min(bytesSent + CHUNK_SIZE, totalSize);
+                byte[] chunk = new byte[chunkEnd - bytesSent];
+                System.arraycopy(inputArray, bytesSent, chunk, 0, chunk.length);
+                usbSerialPort.write(chunk, WRITE_WAIT_MILLIS);
+                bytesSent = chunkEnd;
+            }
+            usbSerialPort.write("END".getBytes(), WRITE_WAIT_MILLIS);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static int msg_index = 0;
+    private void serSendChunks(final List<List<String>> chunks) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                int fileIndex = 0;
+                boolean globalSendFlag = true;
+                for (List<String> chunk : chunks) {
+                    StringBuilder chunkBuilder = new StringBuilder();
+                    for (String line : chunk) {
+                        chunkBuilder.append(line).append("\n");
+                    }
+                    chunkBuilder.append("0000");
+                    String chunkString = chunkBuilder.toString();
+
+                    // 发送chunk，并设置重发次数
+                    int retries = 3; // 设置重发次数
+                    boolean sentSuccessfully = false;
+                    for (int attempt = 0; attempt < retries; attempt++) {
+                        serSend(chunkString);
+                        // 等待响应信号
+                        if (waitForAck()) {
+                            sentSuccessfully = true;
+                            break; // 成功收到响应信号，跳出重发循环
+                        } else {
+                            Log.e(DAG, "Failed to receive acknowledgment from MCU for chunk: " + fileIndex + ", attempt " + (attempt + 1));
+                        }
+                    }
+
+                    if (!sentSuccessfully) {
+                        Log.e(DAG, "Failed to send chunk after " + retries + " attempts. Stopping transmission.");
+                        msg_index = fileIndex;
+                        globalSendFlag = false;
+                        break; // 若无法发送成功，停止发送
+                    }
+                    fileIndex++;
+                }
+
+                if (globalSendFlag) {
+                    serSend("END");
                 } else {
-                    Log.e(DAG, "Failed to receive acknowledgment from MCU for chunk: " + fileIndex + ", attempt " + (attempt + 1));
+                    serSend("Failed:" + msg_index);
                 }
             }
-
-            if (!sentSuccessfully) {
-                Log.e(DAG, "Failed to send chunk after " + retries + " attempts. Stopping transmission.");
-                break; // 若无法发送成功，停止发送
-            }
-
-            fileIndex++;
-        }
-        serSend("END");
+        }).start();
     }
 
     // 等待单片机响应信号
     private boolean waitForAck() {
-        long timeout = 2000; // 超时时间为5秒
+        long timeout = 5000; // 超时时间为5秒
         long startTime = System.currentTimeMillis();
         ackReceived = false; // 重置ACK标志
 
@@ -721,6 +747,8 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 Thread.sleep(100); // 等待100ms后再检查
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                Log.e(DAG, "Thread interrupted while waiting for acknowledgment");
+                return false; // 返回false以终止等待
             }
         }
         return false;
@@ -757,7 +785,6 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
 
 
         void serStatus(String str) {
-
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -765,9 +792,29 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     tv_ser_state.setText(str);
                 }
             });
-
         }
 
+//  心跳线程
+    private Thread heartbeatThread;
+    private void startHeartbeatThread() {
+        heartbeatThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                while (true) {
+                    if (serNowState == serialState.OPEN && flag_serConnect) {
+                        serSend(strHeartBeat);
+                    }
+                    try {
+                        Thread.sleep(10000); // 每5秒发送一次心跳信号
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        });
+        heartbeatThread.start();
+    }
         private void transToNextStatus(){
             serialState preState = serNowState;
             switch (serNowState) {
@@ -787,7 +834,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     serNowState = serialState.READY;
                     break;
             }
-            serSend("State:" + preState + " to READY!");
+            Log.d(STG,"State:" + preState + " to READY!");
         }
 
         private void executeAction(String rec_msg) {
@@ -802,28 +849,28 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                         if (rec_arr_len == 2 & rec_arr[0].equals("RE") & flag_serConnect) {
                             if (!flagCameraOpen) {
                                 serOpenCamera();
-                                serSend("Camera Open Success");
                             }
                             transToNextStatus();
                         }
                         break;
                     case READY:
                         if (rec_arr_len == 2 & rec_arr[0].equals("AC")) {
+                            serSendRepeat("ACS");
                             transToNextStatus();
                         } else if (rec_arr_len == 2 & rec_arr[0].equals("ED")) {
-                            serSend("Ready trans to edit state!");
+                            serSendRepeat("EDS");
                             serNowState = serialState.EDIT;
                         } else if (rec_arr_len == 2 & rec_arr[0].equals("PC")) {
                             if (flagCameraOpen) {
-                                serNowState = serialState.Picture;
-                                serSend("PIC");
+                                serNowState = serialState.PIC;
+                                serSendRepeat("PCO");
                             } else {
                                 serOpenCamera();
-                                serSend("COS");
+                                serSendRepeat("PCC");
                             }
                         }
                         break;
-                    case Picture:
+                    case PIC:
                         if (rec_arr[0].equals("STA")){
                             ackReceived = false;
                             flagGetImage = true;
@@ -834,9 +881,27 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                             transToNextStatus();
                             serSend("Serial trans to Ready State!");
                         }
+                        break;
+
+                    }
                 }
             }
-        }
 
+    // 获取当前检测状态
+//    private String getMsgCurrentPar() {
+//        String msg_current_par = "roi_range: ";
+//        for (int i = 0; i < 4; i++) {
+//            msg_current_par = msg_current_par + arrRoi1[i] + ",";
+//        }
+//        for (int i = 0; i < 4; i++) {
+//            msg_current_par = msg_current_par + arrRoi2[i] + ",";
+//        }
+//        msg_current_par = msg_current_par + "\n camera_par: E:" + camera_exposureTime + " ISO:" + camera_Iso + " focus:"+ camera_focusDistance;
+//        msg_current_par = msg_current_par + "\n detect_par: ";
+//        for (int i = 0; i < 3; i++) {
+//            msg_current_par = msg_current_par + detect_par_arr[i];
+//        }
+//        return msg_current_par;
+//    }
 /************************************************************************/
 }

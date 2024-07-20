@@ -10,14 +10,14 @@
         android:layout_weight="0.5"
         android:orientation="horizontal"
         >
-        <Button
+        <Spinner
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:text="SQL"
-            android:id="@+id/bt_Ser_sql"
             android:layout_weight="1"
+            android:text="BaudRate"
+            android:entries="@array/BaudRate"
+            android:id="@+id/sp_Ser_baudRate"
             />
-
         <Button
             android:layout_width="match_parent"
             android:layout_height="match_parent"
