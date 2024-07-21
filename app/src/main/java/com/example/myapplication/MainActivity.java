@@ -160,13 +160,18 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
 /************************************************************************/
 
 /***************   Transmission Identifier   *************************************/
-    String strHeartBeat = "cixing";
-    String strPicReady = "PICREADY";
-    String strPicACK = "PICACK";
-    String strRE2AC = "R2AC";
-    String strRE2ED = "R2ED";
-    String strOP2RE = "O2RE";
-    String strAC2RE = "A2RE";
+    byte[] arrHeartBeat = {0x63,0x69,0x78,0x69,0x6e,0x67,0x0d,0x0a};
+    byte[] arrRE2PC = {0x52,0x45,0x32,0x50,0x43,0x0d,0x0a,0x00};
+    byte[] arrRE2ED = {0x52,0x45,0x32,0x45,0x44,0x0d,0x0a,0x00};
+    byte[] arrRE2AC = {0x52,0x45,0x32,0x41,0x43,0x0d,0x0a,0x00};
+    byte[] arrBA2RE = {0x42,0x41,0x32,0x52,0x45,0x0d,0x0a,0x00};
+    byte[] arrOP2RE = {0x4F,0x50,0x32,0x52,0x45,0x0d,0x0a,0x00};
+    byte[] arrSTATUS = {0x53,0x54,0x41,0x54,0x55,0x53,0x0d,0x0a};
+    byte[] arrSTA = {0x53,0x54,0x41,0x0d,0x0a,0x00,0x00,0x00};
+    byte[] arrACK = {0x41,0x43,0x4B,0x0d,0x0a,0x00,0x00,0x00};
+    byte[] arrEND = {0x45,0x4E,0x44,0x0d,0x0a,0x00,0x00,0x00};
+    byte[] arrPCO = {0x50,0x43,0x4F,0x0d,0x0a,0x00,0x00,0x00};
+    byte[] arrPCC = {0x50,0x43,0x43,0x0d,0x0a,0x00,0x00,0x00};
 
  /************************************************************************/
     @SuppressLint("MissingInflatedId")
@@ -257,7 +262,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             serDisconnect();
         } else if (id == R.id.bt_Ser_send) {
             String send_msg = et_ser_send.getText().toString();
-            serSend(send_msg);
+            serStrSend(send_msg);
         } else if (id == R.id.bt_Ser_camera) {
             serOpenCamera();
         } else if (id == R.id.bt_Ser_roi) {
@@ -543,7 +548,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         public void onNewData(byte[] bytes) {
             String rec_msg = new String(bytes);
             tv_ser_rec.setText(rec_msg);
-            executeAction(rec_msg);
+            executeAction(bytes);
         }
 
         //    不要操作UI线程，会闪退
@@ -641,7 +646,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
 //            cameraClose();
         }
 
-        void serSend(String str) {
+        void serStrSend(String str) {
             if (flag_serConnect && usbSerialPort != null) {
                 byte[] data = (str + '\n').getBytes();
                 try {
@@ -653,6 +658,14 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 Log.d("Serial", "Serial send error!");
             }
         }
+
+    void serByteSend(byte[] arrByte){
+        try {
+            usbSerialPort.write(arrByte, WRITE_WAIT_MILLIS);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
         void serSendRepeat(String str){
             if (flag_serConnect && usbSerialPort != null) {
                 byte[] data = (str + '\n').getBytes();
@@ -705,7 +718,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     int retries = 3; // 设置重发次数
                     boolean sentSuccessfully = false;
                     for (int attempt = 0; attempt < retries; attempt++) {
-                        serSend(chunkString);
+                        serStrSend(chunkString);
                         // 等待响应信号
                         if (waitForAck()) {
                             sentSuccessfully = true;
@@ -723,11 +736,10 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     }
                     fileIndex++;
                 }
-
                 if (globalSendFlag) {
-                    serSend("END");
+                    serStrSend("END");
                 } else {
-                    serSend("Failed:" + msg_index);
+                    serStrSend("Failed:" + msg_index);
                 }
             }
         }).start();
@@ -802,7 +814,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             public void run() {
                 while (true) {
                     if (serNowState == serialState.OPEN && flag_serConnect) {
-                        serSend(strHeartBeat);
+                        serByteSend(arrHeartBeat);
                     }
                     try {
                         Thread.sleep(10000); // 每5秒发送一次心跳信号
@@ -837,16 +849,23 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             Log.d(STG,"State:" + preState + " to READY!");
         }
 
-        private void executeAction(String rec_msg) {
-            String[] rec_arr = rec_msg.split(":");
-            int rec_arr_len = rec_arr.length;
-            if (rec_arr[0].equals("GS") & flag_serConnect) {
-                serSend("Now State is " + serNowState);
+        private boolean checkByteArray(byte[] inputBytes,byte[] targetBytes){
+            if (inputBytes.length != 8 || targetBytes.length != 8){
+                return false;
+            }
+            for (int i = 0; i < 8; i++) {
+                if (inputBytes[i] != targetBytes[i])return false;
+            }
+            return true;
+        }
+        private void executeAction(byte[] inputBytes) {
+            if (checkByteArray(inputBytes,arrSTATUS) & flag_serConnect) {
+                serStrSend("Now State is " + serNowState);
             }
             if (flag_serConnect) {
                 switch (serNowState) {
                     case OPEN:
-                        if (rec_arr_len == 2 & rec_arr[0].equals("RE") & flag_serConnect) {
+                        if (checkByteArray(inputBytes,arrOP2RE) & flag_serConnect) {
                             if (!flagCameraOpen) {
                                 serOpenCamera();
                             }
@@ -854,35 +873,41 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                         }
                         break;
                     case READY:
-                        if (rec_arr_len == 2 & rec_arr[0].equals("AC")) {
+                        if (checkByteArray(inputBytes,arrRE2AC)) {
                             serSendRepeat("ACS");
                             transToNextStatus();
-                        } else if (rec_arr_len == 2 & rec_arr[0].equals("ED")) {
+                        } else if (checkByteArray(inputBytes,arrRE2ED)) {
                             serSendRepeat("EDS");
                             serNowState = serialState.EDIT;
-                        } else if (rec_arr_len == 2 & rec_arr[0].equals("PC")) {
+                        } else if (checkByteArray(inputBytes,arrRE2PC)) {
                             if (flagCameraOpen) {
                                 serNowState = serialState.PIC;
-                                serSendRepeat("PCO");
+//                                serSendRepeat("PCO");
+                                for (int i = 0; i < 3; i++) {
+                                    serByteSend(arrPCO);
+                                }
                             } else {
                                 serOpenCamera();
-                                serSendRepeat("PCC");
+                                for (int i = 0; i < 3; i++) {
+                                    serByteSend(arrPCC);
+                                }
                             }
                         }
                         break;
                     case PIC:
-                        if (rec_arr[0].equals("STA")){
+                        if (checkByteArray(inputBytes,arrSTA)){
                             ackReceived = false;
                             flagGetImage = true;
                         }
-                        if (rec_arr[0].equals("ACK")) {
+                        if (checkByteArray(inputBytes,arrACK)) {
                             ackReceived = true;
-                        } else if (rec_arr[0].equals("END")) {
+                        } else if (checkByteArray(inputBytes,arrEND)) {
                             transToNextStatus();
-                            serSend("Serial trans to Ready State!");
+                            for (int i = 0; i < 3; i++) {
+                                serByteSend(arrBA2RE);
+                            }
                         }
                         break;
-
                     }
                 }
             }
