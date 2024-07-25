@@ -10,7 +10,6 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.ImageFormat;
 import android.graphics.Rect;
-import android.graphics.Region;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
@@ -32,10 +31,8 @@ import android.os.Bundle;
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 
-import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
-import android.util.Base64;
 import android.util.Log;
 import android.util.Range;
 import android.view.View;
@@ -43,7 +40,6 @@ import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.ListView;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -59,19 +55,14 @@ import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
-import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
-import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.Semaphore;
 
@@ -161,7 +152,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     /************************************************************************/
 
     // 工具类
-    private MyUtil myUtil;
+    private UtilTool myUtil;
     private static Bitmap bm_roi_photo;
     private static final String FAG = "FileDebug";
     private static final String CAG = "CameraDebug";
@@ -211,7 +202,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        myUtil = new MyUtil();
+        myUtil = new UtilTool();
         saveFilePath = getExternalCacheDir().getAbsolutePath() + "/";
         OpenCVLoader.initDebug(false);
         if (myUtil.checkPermissions(MainActivity.this)) {

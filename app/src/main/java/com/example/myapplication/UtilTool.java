@@ -2,18 +2,13 @@ package com.example.myapplication;
 
 import android.Manifest;
 import android.app.Activity;
-import android.content.Context;
 import android.content.pm.PackageManager;
-import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.media.Image;
-import android.net.Uri;
-import android.provider.MediaStore;
 import android.util.Base64;
 import android.util.Log;
-import android.widget.Toast;
 
 import org.opencv.android.Utils;
 import org.opencv.core.CvType;
@@ -36,11 +31,9 @@ import java.util.List;
 import java.util.Locale;
 
 import androidx.annotation.NonNull;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
 
-public class MyUtil {
-    public MyUtil(){
+public class UtilTool {
+    public UtilTool(){
 
     }
     private static final int REQUEST_CODE_PERMISSIONS = 100;
@@ -182,15 +175,15 @@ public class MyUtil {
         return chunks;
     }
 
-//    public byte[] saveMatAsJpg(Mat inputMat){
-//        ByteArrayOutputStream bass = new ByteArrayOutputStream();
-//        boolean isSuccess = Imgcodecs.imencode(".jpg", inputMat, bass);
-//        if (!isSuccess) {
-//            // 处理错误
-//            Log.e("ImageConversion", "Failed to encode image to JPG");
-//        }
-//        return bass.toByteArray();
-//    }
+    public byte[] saveMatAsJpg(Mat inputMat){
+        ByteArrayOutputStream bass = new ByteArrayOutputStream();
+        boolean isSuccess = Imgcodecs.imencode(".jpg", inputMat, bass);
+        if (!isSuccess) {
+            // 处理错误
+            Log.e("ImageConversion", "Failed to encode image to JPG");
+        }
+        return bass.toByteArray();
+    }
 
     public String bitmapToString(Bitmap bitmap) {
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
@@ -417,5 +410,4 @@ public class MyUtil {
         // 所有参数都在合法范围内
         return true;
     }
-
 }
