@@ -198,12 +198,86 @@ public class MyUtil {
         byte[] byteArray = byteArrayOutputStream.toByteArray();
         return Base64.encodeToString(byteArray, Base64.DEFAULT);
     }
+    // 保存数据到本地文件的方法
+    public void strSaveToFile(String file_path, String file_name, String data) {
+        // 确保存储目录存在
+        File storageDir = new File(file_path);
+        if (!storageDir.exists()) {
+            storageDir.mkdirs();
+        }
+        // 保存文件
+        File file = new File(file_path, file_name);
+        FileOutputStream fos = null;
+        try {
+            fos = new FileOutputStream(file);
+            fos.write(data.getBytes());
+            fos.flush();
+            Log.d(DAG, "Data saved to file: " + file.getAbsolutePath());
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            if (fos != null) {
+                try {
+                    fos.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+
+    public String convertHexBytesToString(byte[] inputBytes) {
+        if (inputBytes.length != 8) {
+            return null;
+        }
+        StringBuilder combinedString = new StringBuilder();
+        for (int i = 0; i < 8; i++) {
+            combinedString.append((char) inputBytes[i]);
+        }
+        return combinedString.toString();
+    }
+
+    public int[] inputRoiArray(byte[] inputBytes){
+       byte[] arrInputRoi = {0x00,0x00,0x00,0x00,0x00};
+        for (int i = 0; i < 4; i++) {
+            arrInputRoi[i] = inputBytes[i];
+        }
+        int x1 = Integer.getInteger(convertHexBytesToString(arrInputRoi));
+        for (int i = 4; i < 8; i++) {
+            arrInputRoi[i] = inputBytes[i];
+        }
+        int y1 = Integer.getInteger(convertHexBytesToString(arrInputRoi));
+        int[] getRoi = {x1,y1};
+        return getRoi;
+    }
 
     public byte[] saveBitmapAsJpg(Bitmap bitmap){
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
         bitmap.compress(Bitmap.CompressFormat.JPEG, 100, byteArrayOutputStream);
         byte[] jpegData = byteArrayOutputStream.toByteArray();
         return jpegData;
+    }
+    public void writeBytesAsHexToFile(byte[] byteArray, String directoryPath, String fileName) throws IOException {
+        // 创建目录
+        File dir = new File(directoryPath);
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+        // 创建文件
+        File file = new File(dir, fileName);
+        if (!file.exists()) {
+            file.createNewFile();
+        }
+        BufferedWriter writer = new BufferedWriter(new FileWriter(file));
+
+        for (byte b : byteArray) {
+            String hexString = String.format("%02X", b);
+            writer.write(hexString);
+            writer.write(" "); // 添加空格以便于阅读
+        }
+
+        writer.close();
     }
 
     private void saveBitmapAsFile(Bitmap bitmap, String saveFilePath) {

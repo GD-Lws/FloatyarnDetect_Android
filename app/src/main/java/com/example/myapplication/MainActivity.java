@@ -30,6 +30,7 @@ import android.os.Build;
 import android.os.Bundle;
 
 import androidx.annotation.NonNull;
+import androidx.core.app.ActivityCompat;
 
 import android.os.Environment;
 import android.os.Handler;
@@ -44,6 +45,7 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ListView;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -73,7 +75,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.Semaphore;
 
-public class MainActivity extends Activity implements SerialInputOutputManager.Listener, View.OnClickListener  {
+public class MainActivity extends Activity implements SerialInputOutputManager.Listener, View.OnClickListener {
 
     /***************   Serial Value   *************************************/
     static class SerListItem {
@@ -87,20 +89,27 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             this.driver = driver;
         }
     }
+
     private enum serialState {
         CLOSE,
         OPEN,
         READY,
         ACTIVE,
         EDIT,
-        PIC
+        PIC,
+        MSG_END
     }
+
     private enum operateMode {
         Detect,
         Compare,
         Record
     }
+
     private serialState serNowState = serialState.CLOSE;
+    private serialState serSaveState = serialState.CLOSE;
+    private operateMode detectMode = operateMode.Detect;
+
     private SerialInputOutputManager usbIoManager;
     private final ArrayList<SerListItem> serListItems = new ArrayList<>();
     private ArrayAdapter<SerListItem> listAdapter;
@@ -108,18 +117,18 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     private UsbSerialPort usbSerialPort = null;
     private ListView lv_device;
     private static final String INTENT_ACTION_GRANT_USB = BuildConfig.APPLICATION_ID + ".GRANT_USB";
-    private Button bt_ser_clear, bt_ser_connect, bt_ser_disconnect, bt_ser_refresh, bt_ser_send;
-    private TextView  tv_ser_rec, tv_ser_state, tv_camera_state;
-    private EditText et_ser_send;
+    private Button bt_ser_clear, bt_ser_connect, bt_ser_disconnect, bt_ser_refresh, bt_ser_send, bt_ser_sqlite, bt_ser_params, bt_ser_ready;
+    private Spinner sp_baudRate, sp_mode;
+    private TextView tv_ser_rec, tv_ser_state, tv_camera_state;
     private static boolean flag_serConnect = false;
     private static final int WRITE_WAIT_MILLIS = 2000;
-    private int baudRate = 115200;
+    private int baudRate = 460800;
     private int linesPerChunks = 30;
     private static final int CHUNK_SIZE = 10240; // 定义每个包的大小
 
 /************************************************************************/
 
-/***************   Camera Value   *************************************/
+    /***************   Camera Value   *************************************/
 
     private CameraCaptureSession mCaptureSession;
 
@@ -160,40 +169,43 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     private static final String DAG = "DetectDebug";
     private static final String STG = "StateDebug";
     private String saveFilePath;
-//    传输图标响应标志
+    //    传输图标响应标志
     private volatile boolean ackReceived = false;
+    private long recTimeOut = 1000;
 /************************************************************************/
 
-/***************   Transmission Identifier   *************************************/
-    byte[] arrHeartBeat_op = {0x63,0x69,0x78,0x69,0x6e,0x67,0x0d,0x0a};
-    byte[] arrHeartBeat_re = {0x52,0x65,0x61,0x64,0x79,0x0d,0x0a,0x00};
+    /***************   Transmission Identifier   *************************************/
+    byte[] arrHeartBeat_op = {0x63, 0x69, 0x78, 0x69, 0x6e, 0x67, 0x0d, 0x0a};
 
-    byte[] arrRE2PC = {0x52,0x45,0x32,0x50,0x43,0x0d,0x0a,0x00};
-    byte[] arrRE2ED = {0x52,0x45,0x32,0x45,0x44,0x0d,0x0a,0x00};
-    byte[] arrRE2AC = {0x52,0x45,0x32,0x41,0x43,0x0d,0x0a,0x00};
-    byte[] arrBA2RE = {0x42,0x41,0x32,0x52,0x45,0x0d,0x0a,0x00};
-    byte[] arrOP2RE = {0x4F,0x50,0x32,0x52,0x45,0x0d,0x0a,0x00};
-    byte[] arrSTATUS = {0x53,0x54,0x41,0x54,0x55,0x53,0x0d,0x0a};
+    byte[] arrRE2PC = {0x52, 0x45, 0x32, 0x50, 0x43, 0x0d, 0x0a, 0x00};
+    byte[] arrRE2ED = {0x52, 0x45, 0x32, 0x45, 0x44, 0x0d, 0x0a, 0x00};
+    byte[] arrRE2AC = {0x52, 0x45, 0x32, 0x41, 0x43, 0x0d, 0x0a, 0x00};
+    byte[] arrBA2RE = {0x42, 0x41, 0x32, 0x52, 0x45, 0x0d, 0x0a, 0x00};
+    byte[] arrOP2RE = {0x4F, 0x50, 0x32, 0x52, 0x45, 0x0d, 0x0a, 0x00};
+    byte[] arrSTATUS = {0x53, 0x54, 0x41, 0x54, 0x55, 0x53, 0x0d, 0x0a};
 
-    byte[] arrSTA = {0x53,0x54,0x41,0x0d,0x0a,0x00,0x00,0x00};
-    byte[] arrACK = {0x41,0x43,0x4B,0x0d,0x0a,0x00,0x00,0x00};
-    byte[] arrEND = {0x45,0x4E,0x44,0x0d,0x0a,0x00,0x00,0x00};
-    byte[] arrPCO = {0x50,0x43,0x4F,0x0d,0x0a,0x00,0x00,0x00};
-    byte[] arrPCC = {0x50,0x43,0x43,0x0d,0x0a,0x00,0x00,0x00};
+    byte[] arrSTA = {0x53, 0x54, 0x41, 0x0d, 0x0a, 0x00, 0x00, 0x00};
+    byte[] arrACK = {0x41, 0x43, 0x4B, 0x0d, 0x0a, 0x00, 0x00, 0x00};
+    byte[] arrEND = {0x45, 0x4E, 0x44, 0x0d, 0x0a, 0x00, 0x00, 0x00};
+    byte[] arrMSG_START = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
+    byte[] arrMSG_FINISH = {0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F};
 
-    byte[] arrS2ROI1 = {0x53,0x32,0x52,0x4F,0x49,0x31,0x0d,0x0a};
-    byte[] arrS2ROI2 = {0x53,0x32,0x52,0x4F,0x49,0x32,0x0d,0x0a};
+    byte[] arrPCO = {0x50, 0x43, 0x4F, 0x0d, 0x0a, 0x00, 0x00, 0x00};
+    byte[] arrPCC = {0x50, 0x43, 0x43, 0x0d, 0x0a, 0x00, 0x00, 0x00};
+
+    byte[] arrS2ROI1 = {0x53, 0x32, 0x52, 0x4F, 0x49, 0x31, 0x0d, 0x0a};
     //exposureTime
-    byte[] arrS2CAM1 = {0x53,0x32,0x43,0x41,0x4D,0x31,0x0d,0x0a};
+    byte[] arrS2CAM1 = {0x53, 0x32, 0x43, 0x41, 0x4D, 0x31, 0x0d, 0x0a};
     //ISO
-    byte[] arrS2CAM2 = {0x53,0x32,0x43,0x41,0x4D,0x32,0x0d,0x0a};
+    byte[] arrS2CAM2 = {0x53, 0x32, 0x43, 0x41, 0x4D, 0x32, 0x0d, 0x0a};
     //focusDistance
-    byte[] arrS2CAM3 = {0x53,0x32,0x43,0x41,0x4D,0x33,0x0d,0x0a};
+    byte[] arrS2CAM3 = {0x53, 0x32, 0x43, 0x41, 0x4D, 0x33, 0x0d, 0x0a};
     //zoomRatio
-    byte[] arrS2CAM4 = {0x53,0x32,0x43,0x41,0x4D,0x34,0x0d,0x0a};
+    byte[] arrS2CAM4 = {0x53, 0x32, 0x43, 0x41, 0x4D, 0x34, 0x0d, 0x0a};
+    byte[] arrS2MODE = {0x53, 0x32, 0x4D, 0x4F, 0x44, 0x45, 0x0d, 0x0a};
 
 
- /************************************************************************/
+    /************************************************************************/
     @SuppressLint("MissingInflatedId")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -204,12 +216,12 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         OpenCVLoader.initDebug(false);
         if (myUtil.checkPermissions(MainActivity.this)) {
             Toast.makeText(this, "浮纱检测程序", Toast.LENGTH_SHORT).show();
-        }else {
+        } else {
             Toast.makeText(this, "检测权限未授权", Toast.LENGTH_SHORT).show();
         }
         InitView();
-        cameraManager = (CameraManager)getApplication().getSystemService(Context.CAMERA_SERVICE);
-        try{
+        cameraManager = (CameraManager) getApplication().getSystemService(Context.CAMERA_SERVICE);
+        try {
             cameraId = cameraManager.getCameraIdList()[0];
         } catch (CameraAccessException e) {
             e.printStackTrace();
@@ -217,7 +229,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         serRefresh();
     }
 
-    private void InitView(){
+    private void InitView() {
         listAdapter = new ArrayAdapter<SerListItem>(MainActivity.this, 0, serListItems) {
             @NonNull
             @Override
@@ -227,12 +239,12 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     view = MainActivity.this.getLayoutInflater().inflate(R.layout.device_list_item, parent, false);
                 TextView text1 = view.findViewById(R.id.text1);
                 TextView text2 = view.findViewById(R.id.text2);
-                if(item.driver == null)
+                if (item.driver == null)
                     text1.setText("<no driver>");
-                else if(item.driver.getPorts().size() == 1)
-                    text1.setText(item.driver.getClass().getSimpleName().replace("SerialDriver",""));
+                else if (item.driver.getPorts().size() == 1)
+                    text1.setText(item.driver.getClass().getSimpleName().replace("SerialDriver", ""));
                 else
-                    text1.setText(item.driver.getClass().getSimpleName().replace("SerialDriver","")+", Port "+item.port);
+                    text1.setText(item.driver.getClass().getSimpleName().replace("SerialDriver", "") + ", Port " + item.port);
                 text2.setText(String.format(Locale.US, "Vendor %04X, Product %04X", item.device.getVendorId(), item.device.getProductId()));
                 return view;
             }
@@ -243,10 +255,10 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                 MainActivity.SerListItem item = (SerListItem) serListItems.get(position);
-                if(item.driver == null) {
+                if (item.driver == null) {
                     Toast.makeText(MainActivity.this, "no driver", Toast.LENGTH_SHORT).show();
                 } else {
-                    Toast.makeText(MainActivity.this, "Select driverId" + item.device.getDeviceId() + "port" +  item.port , Toast.LENGTH_SHORT).show();
+                    Toast.makeText(MainActivity.this, "Select driverId" + item.device.getDeviceId() + "port" + item.port, Toast.LENGTH_SHORT).show();
                 }
             }
         });
@@ -259,7 +271,6 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         bt_ser_roi = findViewById(R.id.bt_Ser_roi);
 
         tv_ser_rec = findViewById(R.id.tv_Ser_rec);
-        et_ser_send = findViewById(R.id.et_Ser_send);
         tv_ser_state = findViewById(R.id.tv_ser_State);
         tv_camera_state = findViewById(R.id.tv_camera_State);
 
@@ -273,7 +284,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     @Override
     public void onClick(View v) {
         int id = v.getId();
-        if (id == R.id.bt_Ser_refresh){
+        if (id == R.id.bt_Ser_refresh) {
             serRefresh();
             Toast.makeText(MainActivity.this, "串口设备刷新", Toast.LENGTH_SHORT).show();
         } else if (id == R.id.bt_Ser_open) {
@@ -281,9 +292,10 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         } else if (id == R.id.bt_Ser_close) {
             serDisconnect();
         } else if (id == R.id.bt_Ser_send) {
-            String send_msg = et_ser_send.getText().toString();
-            serStrSend(send_msg);
+//            String send_msg = et_ser_send.getText().toString();
+            serStrSend("SerialTest");
         } else if (id == R.id.bt_Ser_camera) {
+            serNowState = serialState.PIC;
             serOpenCamera();
         } else if (id == R.id.bt_Ser_roi) {
             flagGetImage = true;
@@ -296,8 +308,11 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         serRefresh();
     }
 
-    private void serOpenCamera(){
-        if (flagCameraOpen){Toast.makeText(MainActivity.this, "摄像头已开启",Toast.LENGTH_SHORT).show();return;}
+    private void serOpenCamera() {
+        if (flagCameraOpen) {
+            Toast.makeText(MainActivity.this, "摄像头已开启", Toast.LENGTH_SHORT).show();
+            return;
+        }
         Log.d(CAG, "相机开启");
         startBackgroundThread();
         mImageReader = ImageReader.newInstance(cameraViewWidth, cameraViewHeight, ImageFormat.YUV_420_888, 52);
@@ -349,21 +364,26 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 // 将灰度图像复制到 Bitmap 中
                 Utils.matToBitmap(grayscaleMat, bitmap);
                 if (flagGetImage) {
-//                    saveBitmapAsFile(bitmap);
                     byte[] jpgByteArray = myUtil.saveBitmapAsJpg(bitmap);
+                    try {
+                        myUtil.writeBytesAsHexToFile(jpgByteArray, saveFilePath, "saveByteArray.txt");
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
-                            Toast.makeText(MainActivity.this, "length:"+jpgByteArray.length, Toast.LENGTH_SHORT).show();
+                            Toast.makeText(MainActivity.this, "length:" + jpgByteArray.length, Toast.LENGTH_SHORT).show();
                         }
                     });
-                    sendByteArray(jpgByteArray);
+                    sendByteArrayWithAck(jpgByteArray);
+
                     flagGetImage = false;
                 }
                 readerImage.close();
-                }
             }
-        };
+        }
+    };
 
     private void startBackgroundThread() {
         // 相机线程
@@ -383,157 +403,192 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             mImageThread.start();
             mImageHandler = new Handler(mImageThread.getLooper());
         }
-        }
+    }
 
-        private void stopBackgroundThread() {
-            if (mCameraSessionThread != null) {
-                mCameraSessionThread.quitSafely();
-                try {
-                    mCameraSessionThread.join();
-                    mCameraSessionThread = null;
-                    mCameraSessionHandler = null;
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-            if (mCameraStateThread != null) {
-                mCameraStateThread.quitSafely();
-                try {
-                    mCameraStateThread.join();
-                    mCameraStateThread = null;
-                    mCameraStateHandler = null;
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-            if (mImageThread != null) {
-                mImageThread.quitSafely();
-                try {
-                    mImageThread.join();
-                    mImageThread = null;
-                    mImageHandler = null;
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-
-
-        private CameraCaptureSession.CaptureCallback mCaptureCallback = new CameraCaptureSession.CaptureCallback() {
-            @Override
-            public void onCaptureCompleted(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull TotalCaptureResult result) {
-                super.onCaptureCompleted(session, request, result);
-                // Retrieve exposure time from the result
-                float real_exposureTime = result.get(CaptureResult.SENSOR_EXPOSURE_TIME);
-                Range real_fps_Range = result.get(CaptureResult.CONTROL_AE_TARGET_FPS_RANGE);
-                float real_Iso_value = result.get(CaptureResult.SENSOR_SENSITIVITY);
-                float real_focusDistance = result.get(CaptureResult.LENS_FOCUS_DISTANCE);
-                if (real_exposureTime != 0) {
-                    Log.i("camera_info", "ETR: " + real_exposureTime + " FPS: " + real_fps_Range + " FDR: " + real_focusDistance + " ISO: " + real_Iso_value);
-                }
-            }
-        };
-
-        private void setCameraPar() {
-            Range<Integer> fpsRange = new Range(240, 240);
-            mPreviewBuilder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, fpsRange);
-            mPreviewBuilder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF);
-            mPreviewBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_OFF);
-            mPreviewBuilder.set(CaptureRequest.LENS_FOCUS_DISTANCE, camera_focusDistance);
-            mPreviewBuilder.set(CaptureRequest.SENSOR_EXPOSURE_TIME, camera_exposureTime);
-            mPreviewBuilder.set(CaptureRequest.SCALER_CROP_REGION, getRect(camera_zoomRatio));
-            mPreviewBuilder.set(CaptureRequest.SENSOR_SENSITIVITY, camera_Iso);
-            Log.d(CAG, "相机参数设置");
-        }
-
-        private Rect getRect(float Input_zoomRatio) {
-            Rect sensorSize = cameraCharacteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
-            int centerX = sensorSize.centerX();
-            int centerY = sensorSize.centerY();
-            int deltaX = (int) ((sensorSize.width() / (2 * Input_zoomRatio)) + 0.5f);
-            int deltaY = (int) ((sensorSize.height() / (2 * Input_zoomRatio)) + 0.5f);
-            Rect outputRect = new Rect(
-                    Math.max(centerX - deltaX, 0),
-                    Math.max(centerY - deltaY, 0),
-                    Math.min(centerX + deltaX, sensorSize.width() - 1),
-                    Math.min(centerY + deltaY, sensorSize.height() - 1));
-            return outputRect;
-        }
-
-        private CameraDevice.StateCallback cameraStateCallback = new CameraDevice.StateCallback() {
-            @Override
-            public void onOpened(@NonNull CameraDevice cameraDevice) {
-                mCameraDevice = cameraDevice;
-                startPreview();
-                mCameraOpenCloseLock.release();
-            }
-
-            @Override
-            public void onDisconnected(@NonNull CameraDevice cameraDevice) {
-                mCameraOpenCloseLock.release();
-                cameraDevice.close();
-                mCameraDevice = null;
-            }
-
-            @Override
-            public void onError(@NonNull CameraDevice cameraDevice, int error) {
-                mCameraOpenCloseLock.release();
-                cameraDevice.close();
-                mCameraDevice = null;
-            }
-        };
-
-
-        private void startPreview() {
-            if (null == mCameraDevice) {
-                Log.e(CAG, "CameraDevice is null");
-                return;
-            }
+    private void stopBackgroundThread() {
+        if (mCameraSessionThread != null) {
+            mCameraSessionThread.quitSafely();
             try {
-                Log.i(CAG, "申请预览");
-                // 设置为手动模式
-                mPreviewBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-                setCameraPar();
+                mCameraSessionThread.join();
+                mCameraSessionThread = null;
+                mCameraSessionHandler = null;
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+        if (mCameraStateThread != null) {
+            mCameraStateThread.quitSafely();
+            try {
+                mCameraStateThread.join();
+                mCameraStateThread = null;
+                mCameraStateHandler = null;
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+        if (mImageThread != null) {
+            mImageThread.quitSafely();
+            try {
+                mImageThread.join();
+                mImageThread = null;
+                mImageHandler = null;
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+
+    private CameraCaptureSession.CaptureCallback mCaptureCallback = new CameraCaptureSession.CaptureCallback() {
+        @Override
+        public void onCaptureCompleted(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull TotalCaptureResult result) {
+            super.onCaptureCompleted(session, request, result);
+            // Retrieve exposure time from the result
+            float real_exposureTime = result.get(CaptureResult.SENSOR_EXPOSURE_TIME);
+            Range real_fps_Range = result.get(CaptureResult.CONTROL_AE_TARGET_FPS_RANGE);
+            float real_Iso_value = result.get(CaptureResult.SENSOR_SENSITIVITY);
+            float real_focusDistance = result.get(CaptureResult.LENS_FOCUS_DISTANCE);
+            if (real_exposureTime != 0) {
+                Log.i("camera_info", "ETR: " + real_exposureTime + " FPS: " + real_fps_Range + " FDR: " + real_focusDistance + " ISO: " + real_Iso_value);
+            }
+        }
+    };
+
+    private void setCameraPar() {
+        Range<Integer> fpsRange = new Range(240, 240);
+        mPreviewBuilder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, fpsRange);
+        mPreviewBuilder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF);
+        mPreviewBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_OFF);
+        mPreviewBuilder.set(CaptureRequest.LENS_FOCUS_DISTANCE, camera_focusDistance);
+        mPreviewBuilder.set(CaptureRequest.SENSOR_EXPOSURE_TIME, camera_exposureTime);
+        mPreviewBuilder.set(CaptureRequest.SCALER_CROP_REGION, getRect(camera_zoomRatio));
+        mPreviewBuilder.set(CaptureRequest.SENSOR_SENSITIVITY, camera_Iso);
+        Log.d(CAG, "相机参数设置");
+    }
+
+    private Rect getRect(float Input_zoomRatio) {
+        Rect sensorSize = cameraCharacteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
+        int centerX = sensorSize.centerX();
+        int centerY = sensorSize.centerY();
+        int deltaX = (int) ((sensorSize.width() / (2 * Input_zoomRatio)) + 0.5f);
+        int deltaY = (int) ((sensorSize.height() / (2 * Input_zoomRatio)) + 0.5f);
+        Rect outputRect = new Rect(
+                Math.max(centerX - deltaX, 0),
+                Math.max(centerY - deltaY, 0),
+                Math.min(centerX + deltaX, sensorSize.width() - 1),
+                Math.min(centerY + deltaY, sensorSize.height() - 1));
+        return outputRect;
+    }
+
+    private CameraDevice.StateCallback cameraStateCallback = new CameraDevice.StateCallback() {
+        @Override
+        public void onOpened(@NonNull CameraDevice cameraDevice) {
+            mCameraDevice = cameraDevice;
+            startPreview();
+            mCameraOpenCloseLock.release();
+        }
+
+        @Override
+        public void onDisconnected(@NonNull CameraDevice cameraDevice) {
+            mCameraOpenCloseLock.release();
+            cameraDevice.close();
+            mCameraDevice = null;
+        }
+
+        @Override
+        public void onError(@NonNull CameraDevice cameraDevice, int error) {
+            mCameraOpenCloseLock.release();
+            cameraDevice.close();
+            mCameraDevice = null;
+        }
+    };
+
+
+    private void startPreview() {
+        if (null == mCameraDevice) {
+            Log.e(CAG, "CameraDevice is null");
+            return;
+        }
+        try {
+            Log.i(CAG, "申请预览");
+            // 设置为手动模式
+            mPreviewBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+            setCameraPar();
 //            图像处理
-                mPreviewBuilder.addTarget(mImageReader.getSurface());
-                mCameraDevice.createCaptureSession(Arrays.asList(mImageReader.getSurface()), new CameraCaptureSession.StateCallback() {
-                    @Override
-                    public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
-                        mCaptureSession = cameraCaptureSession;
-                        Log.d(CAG, "createCaptureSession onConfigured");
-                        try {
-                            mCaptureSession.setRepeatingRequest(mPreviewBuilder.build(), mCaptureCallback, mCameraSessionHandler);
-                        } catch (CameraAccessException e) {
-                            e.printStackTrace();
-                        }
+            mPreviewBuilder.addTarget(mImageReader.getSurface());
+            mCameraDevice.createCaptureSession(Arrays.asList(mImageReader.getSurface()), new CameraCaptureSession.StateCallback() {
+                @Override
+                public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
+                    mCaptureSession = cameraCaptureSession;
+                    Log.d(CAG, "createCaptureSession onConfigured");
+                    try {
+                        mCaptureSession.setRepeatingRequest(mPreviewBuilder.build(), mCaptureCallback, mCameraSessionHandler);
+                    } catch (CameraAccessException e) {
+                        e.printStackTrace();
                     }
-
-                    @Override
-                    public void onConfigureFailed(@NonNull CameraCaptureSession cameraCaptureSession) {
-                        Toast.makeText(getApplicationContext(), "Failed", Toast.LENGTH_SHORT).show();
-                    }
-                }, mCameraSessionHandler);
-            } catch (CameraAccessException e) {
-                e.printStackTrace();
-            }
-        }
-
-        private void cameraOpen(int width, int height) {
-            try {
-                cameraCharacteristics = cameraManager.getCameraCharacteristics(cameraId);
-                float maxZoom = cameraCharacteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM);
-                Log.d(CAG, "maxZoom:" + maxZoom);
-                StreamConfigurationMap map = cameraCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
-                if ((checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) || (checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)) {
-                    Log.d(CAG, "No camera and storage permission");
-                    requestPermissions(new String[]{android.Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE}, 1001);
                 }
-                Log.d(CAG, "开启相机");
-                cameraManager.openCamera(cameraId, cameraStateCallback, mCameraStateHandler);
-            } catch (CameraAccessException e) {
-                e.printStackTrace();
-            }
+
+                @Override
+                public void onConfigureFailed(@NonNull CameraCaptureSession cameraCaptureSession) {
+                    Toast.makeText(getApplicationContext(), "Failed", Toast.LENGTH_SHORT).show();
+                }
+            }, mCameraSessionHandler);
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
         }
+    }
+
+    private void cameraOpen(final int width, final int height) {
+        // 启动一个后台线程进行一些处理
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    cameraCharacteristics = cameraManager.getCameraCharacteristics(cameraId);
+                    float maxZoom = cameraCharacteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM);
+                    Log.d(CAG, "maxZoom:" + maxZoom);
+                    StreamConfigurationMap map = cameraCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+                    // 检查权限并请求权限，需要在主线程中进行
+                    if ((checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) ||
+                            (checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)) {
+                        Log.d(CAG, "No camera and storage permission");
+                        // 切换到主线程请求权限
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                requestPermissions(new String[]{android.Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE}, 1001);
+                            }
+                        });
+                        return;
+                    }
+                    Log.d(CAG, "开启相机");
+                    // 切换到主线程打开相机
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                if (ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                                    // TODO: Consider calling
+                                    //    ActivityCompat#requestPermissions
+                                    // here to request the missing permissions, and then overriding
+                                    //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                                    //                                          int[] grantResults)
+                                    // to handle the case where the user grants the permission. See the documentation
+                                    // for ActivityCompat#requestPermissions for more details.
+                                    return;
+                                }
+                                cameraManager.openCamera(cameraId, cameraStateCallback, mCameraStateHandler);
+                            } catch (CameraAccessException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    });
+                } catch (CameraAccessException e) {
+                    e.printStackTrace();
+                }
+            }
+        }).start();
+    }
 
         private void cameraClose() {
             try {
@@ -567,8 +622,19 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         @Override
         public void onNewData(byte[] bytes) {
             String rec_msg = new String(bytes);
-            tv_ser_rec.setText(rec_msg);
-            executeAction(bytes);
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"); // 设置时间格式
+            String timestamp = sdf.format(new Date()); // 获取当前时间并格式化为字符串
+
+            // 将时间戳添加到消息字符串前或后
+            String fullMessage = timestamp + " - " + rec_msg; // 例如，在时间戳后添加消息
+
+            // 更新TextView显示新的消息（包含时间戳）
+            tv_ser_rec.setText(fullMessage);
+            try {
+                executeAction(bytes);
+            } catch (InterruptedException | CameraAccessException e) {
+                throw new RuntimeException(e);
+            }
         }
 
         //    不要操作UI线程，会闪退
@@ -686,99 +752,79 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             throw new RuntimeException(e);
         }
     }
-    public void sendBytesWithDelay(byte[] arrByte, int delayMillis) {
-        new Thread(() -> {
-            try {
-                Thread.sleep(delayMillis);
-                serByteSend(arrByte);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new RuntimeException(e);
-            }
-        }).start();
-    }
-        void serSendRepeat(String str){
-            if (flag_serConnect && usbSerialPort != null) {
-                byte[] data = (str + '\n').getBytes();
-                try {
-                    for (int i = 0; i < 3; i++) {
-                        usbSerialPort.write(data, WRITE_WAIT_MILLIS);
-                    }
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            } else {
-                Log.d("Serial", "Serial send error!");
-            }
-        }
 
-    private void sendByteArray(byte[] inputArray) {
-        int totalSize = inputArray.length;
-        int bytesSent = 0;
-        try {
-            while (bytesSent < totalSize) {
-                int chunkEnd = Math.min(bytesSent + CHUNK_SIZE, totalSize);
-                byte[] chunk = new byte[chunkEnd - bytesSent];
-                System.arraycopy(inputArray, bytesSent, chunk, 0, chunk.length);
-                usbSerialPort.write(chunk, WRITE_WAIT_MILLIS);
-                bytesSent = chunkEnd;
-                serStatus("Send Chunk end:" + chunkEnd);
-            }
-            usbSerialPort.write("END".getBytes(), WRITE_WAIT_MILLIS);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private static int msg_index = 0;
-    private void serSendChunks(final List<List<String>> chunks) {
+    private void sendByteArrayWithAck(byte[] inputArray) {
+        serSaveState = serNowState;
+        serNowState = serialState.MSG_END;
         new Thread(new Runnable() {
             @Override
             public void run() {
-                int fileIndex = 0;
+                int totalSize = inputArray.length;
+                int bytesSent = 0;
                 boolean globalSendFlag = true;
-                for (List<String> chunk : chunks) {
-                    StringBuilder chunkBuilder = new StringBuilder();
-                    for (String line : chunk) {
-                        chunkBuilder.append(line).append("\n");
+                if (serSaveState == serialState.PIC) {
+                    try {
+                        usbSerialPort.write(arrMSG_START, WRITE_WAIT_MILLIS);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
                     }
-                    chunkBuilder.append("0000");
-                    String chunkString = chunkBuilder.toString();
+                }
+                while (bytesSent < totalSize && globalSendFlag) {
+                    int chunkEnd = Math.min(bytesSent + CHUNK_SIZE, totalSize);
+                    byte[] chunk = new byte[chunkEnd - bytesSent];
+                    System.arraycopy(inputArray, bytesSent, chunk, 0, chunk.length);
 
-                    // 发送chunk，并设置重发次数
-                    int retries = 3; // 设置重发次数
                     boolean sentSuccessfully = false;
-                    for (int attempt = 0; attempt < retries; attempt++) {
-                        serStrSend(chunkString);
-                        // 等待响应信号
-                        if (waitForAck()) {
-                            sentSuccessfully = true;
-                            break; // 成功收到响应信号，跳出重发循环
-                        } else {
-                            Log.e(DAG, "Failed to receive acknowledgment from MCU for chunk: " + fileIndex + ", attempt " + (attempt + 1));
+                    for (int attempt = 0; attempt < 3; attempt++) {
+                        try {
+                            if (serSaveState == serialState.PIC)serStatus("Send Chunk end:" + chunkEnd);
+                            usbSerialPort.write(chunk, WRITE_WAIT_MILLIS);
+                            // 等待响应信号
+                            if (waitForAck()) {
+                                sentSuccessfully = true;
+                                bytesSent = chunkEnd;
+                                break; // 成功收到响应信号，跳出重发循环
+                            } else {
+                                Log.e("DAG", "Failed to receive acknowledgment from MCU for chunk at position: " + bytesSent + ", attempt " + (attempt + 1));
+                            }
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
                         }
                     }
 
                     if (!sentSuccessfully) {
-                        Log.e(DAG, "Failed to send chunk after " + retries + " attempts. Stopping transmission.");
-                        msg_index = fileIndex;
+                        Log.e("DAG", "Failed to send chunk after " + 3 + " attempts. Stopping transmission.");
                         globalSendFlag = false;
                         break; // 若无法发送成功，停止发送
                     }
-                    fileIndex++;
                 }
+
                 if (globalSendFlag) {
-                    serStrSend("END");
+                    Log.d("DAG", "Finish send msg.");
+                    if (serSaveState == serialState.PIC) {
+                        try {
+                            usbSerialPort.write(arrMSG_FINISH, WRITE_WAIT_MILLIS);
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+
                 } else {
-                    serStrSend("Failed:" + msg_index);
+                    try {
+                        usbSerialPort.write(("Error:2" ).getBytes(), WRITE_WAIT_MILLIS);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
                 }
+                serNowState = serSaveState;
             }
         }).start();
     }
 
+    private static int msg_index = 0;
     // 等待单片机响应信号
     private boolean waitForAck() {
-        long timeout = 5000; // 超时时间为5秒
+        long timeout = recTimeOut;
         long startTime = System.currentTimeMillis();
         ackReceived = false; // 重置ACK标志
 
@@ -790,40 +836,13 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 Thread.sleep(100); // 等待100ms后再检查
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                Log.e(DAG, "Thread interrupted while waiting for acknowledgment");
+                Log.e("DAG", "Thread interrupted while waiting for acknowledgment");
                 return false; // 返回false以终止等待
             }
         }
         return false;
     }
 
-        // 保存数据到本地文件的方法
-        private void strSaveToFile(String file_path, String file_name, String data) {
-            // 确保存储目录存在
-            File storageDir = new File(file_path);
-            if (!storageDir.exists()) {
-                storageDir.mkdirs();
-            }
-            // 保存文件
-            File file = new File(file_path, file_name);
-            FileOutputStream fos = null;
-            try {
-                fos = new FileOutputStream(file);
-                fos.write(data.getBytes());
-                fos.flush();
-                Log.d(DAG, "Data saved to file: " + file.getAbsolutePath());
-            } catch (IOException e) {
-                e.printStackTrace();
-            } finally {
-                if (fos != null) {
-                    try {
-                        fos.close();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-            }
-        }
 
         void serStatus(String str) {
             runOnUiThread(new Runnable() {
@@ -846,7 +865,8 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                         serByteSend(arrHeartBeat_op);
                     }
                     try {
-                        Thread.sleep(8000); // 每5秒发送一次心跳信号
+                        // 每8秒发送一次心跳信号
+                        Thread.sleep(8000);
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         break;
@@ -860,55 +880,106 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             serialState preState = serNowState;
             switch (serNowState) {
                 case CLOSE:
+                case ACTIVE:
                     serNowState = serialState.OPEN;
                     break;
                 case OPEN:
+                case EDIT:
+                case PIC:
                     serNowState = serialState.READY;
                     break;
                 case READY:
                     serNowState = serialState.ACTIVE;
-                    break;
-                case ACTIVE:
-                    serNowState = serialState.OPEN;
-                    break;
-                case EDIT:
-                    serNowState = serialState.READY;
                     break;
             }
             Log.d(STG,"State:" + preState + " to "+ serNowState + "!");
             serStatus("State:" + preState + " to " + serNowState + "!");
         }
 
-        private boolean checkByteArray(byte[] inputBytes,byte[] targetBytes){
-            for (int i = 0; i < 8; i++) {
+        private boolean checkByteArray(byte[] inputBytes,byte[] targetBytes, int preIndex){
+        if (preIndex >= 8)return false;
+        for (int i = 0; i < preIndex; i++) {
                 if (inputBytes[i] != targetBytes[i])return false;
             }
             return true;
         }
 
-//        private void setParameter(byte[] inputBytes, int par_status){
-//            switch (par_status){
-//                case 1:{
-//
-//                }break;
-//                case 2:{
-//
-//                }break;
-//                case 3:{
-//
-//                }break;
-//            }
-//        }
+
+        private void setParameter(byte[] inputBytes, int par_status) throws CameraAccessException {
+        boolean change_flag = true;
+            switch (par_status){
+                case 1:{
+                    int[] roiRange1_x1y1 = myUtil.inputRoiArray(inputBytes);
+                    arrRoi1[0] = roiRange1_x1y1[0];
+                    arrRoi1[1] = roiRange1_x1y1[1];
+                }break;
+                case 2:{
+                    int[] roiRange1_x2y2 = myUtil.inputRoiArray(inputBytes);
+                    arrRoi1[2] = roiRange1_x2y2[0];
+                    arrRoi1[3] = roiRange1_x2y2[1];
+                }break;
+                case 3:{
+                    int[] roiRange2_x1y1 = myUtil.inputRoiArray(inputBytes);
+                    arrRoi2[0] = roiRange2_x1y1[0];
+                    arrRoi2[1] = roiRange2_x1y1[1];
+                }break;
+                case 4:{
+                    int[] roiRange2_x2y2 = myUtil.inputRoiArray(inputBytes);
+                    arrRoi2[2] = roiRange2_x2y2[0];
+                    arrRoi2[3] = roiRange2_x2y2[1];
+                }break;
+                case 5:{
+                    String inputExposureTime = myUtil.convertHexBytesToString(inputBytes);
+                    camera_exposureTime = Long.parseLong(inputExposureTime);
+                }break;
+                case 6:{
+                    String inputIso = myUtil.convertHexBytesToString(inputBytes);
+                    camera_Iso = Integer.parseInt(inputIso);
+                }break;
+                case 7:{
+                    String inputFocusDistance = myUtil.convertHexBytesToString(inputBytes);
+                    camera_focusDistance = Float.parseFloat(inputFocusDistance);
+                }break;
+                case 8:{
+                    String inputZoomRatio = myUtil.convertHexBytesToString(inputBytes);
+                    camera_zoomRatio = Float.parseFloat(inputZoomRatio);
+                }break;
+                case 9:{
+                     if (inputBytes[4] == 0x3A){
+                         if (inputBytes[5] == 0x31)detectMode = operateMode.Detect;
+                         else if (inputBytes[5] == 0x32) {
+                             detectMode = operateMode.Compare;
+                         } else if (inputBytes[5] == 0x33) {
+                             detectMode = operateMode.Record;
+                         }else {
+                             change_flag = false;
+                         }
+                     }else change_flag=false;
+                }break;
+                default:change_flag=false;
+                    break;
+            }
+            if (change_flag){
+                setCameraPar();
+                mCaptureSession.setRepeatingRequest(mPreviewBuilder.build(), mCaptureCallback, mCameraSessionHandler);
+            }
+        }
+
 
         private int edit_status = 0;
-        private void executeAction(byte[] inputBytes) throws InterruptedException {
-            if (checkByteArray(inputBytes,arrSTATUS) & flag_serConnect) {
-                serStrSend("Now State is " + serNowState);
+        private void executeAction(byte[] inputBytes) throws InterruptedException, CameraAccessException {
+            if (checkByteArray(inputBytes,arrSTATUS,8) & flag_serConnect) {
+                serStrSend("ST:" + serNowState.ordinal() + "Mo:"+ detectMode.ordinal());
             }
             if (flag_serConnect) {
                 switch (serNowState) {
+                    case MSG_END:{
+                        if (checkByteArray(inputBytes, arrACK,8)) {
+                            ackReceived = true;
+                        }
+                    }break;
                     case OPEN:
-                        if (checkByteArray(inputBytes,arrOP2RE) & flag_serConnect) {
+                        if (checkByteArray(inputBytes,arrOP2RE, 8) & flag_serConnect) {
                             if (!flagCameraOpen) {
                                 serOpenCamera();
                             }
@@ -916,75 +987,93 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                         }
                         break;
                     case READY:{
-                        if (checkByteArray(inputBytes,arrRE2AC)) {
-                            serSendRepeat("ACS");
+                        if (checkByteArray(inputBytes,arrRE2AC,8)) {
                             transToNextStatus();
-                        } else if (checkByteArray(inputBytes,arrRE2ED)) {
-                            serSendRepeat("EDS");
+                        } else if (checkByteArray(inputBytes,arrRE2ED,8)) {
                             serNowState = serialState.EDIT;
-                        } else if (checkByteArray(inputBytes,arrRE2PC)) {
+                            serStatus("State:" + "Ready to " + "EDIT" + "!");
+                        } else if (checkByteArray(inputBytes,arrRE2PC,8)) {
                             if (flagCameraOpen) {
+                                sendByteArrayWithAck(arrPCO);
                                 serNowState = serialState.PIC;
-                                if (heartbeatThread != null){
-                                    heartbeatThread.join();
-                                }
                                 serStatus("State:" + "Ready to " + "PIC" + "!");
-                                for (int i = 0; i < 3; i++) {
-                                    sendBytesWithDelay(arrPCO,10);
-                                }
                             } else {
                                 serOpenCamera();
-                                for (int i = 0; i < 3; i++) {
-                                    sendBytesWithDelay(arrPCC,10);
-                                }
+                                sendByteArrayWithAck(arrPCC);
                             }
                         } else {
-                            Log.e(SAG,"Error RecMsg-Ready:" + inputBytes);
+                            Log.d(SAG,"Error RecMsg-Ready:" + inputBytes);
                         }
                     }
                         break;
                     case PIC: {
-                        if (checkByteArray(inputBytes, arrSTA)) {
-                            ackReceived = false;
+                        if (checkByteArray(inputBytes, arrSTA,8)) {
                             flagGetImage = true;
                         }
-                        if (checkByteArray(inputBytes, arrACK)) {
-                            ackReceived = true;
-                        } else if (checkByteArray(inputBytes, arrEND)) {
+                        else if (checkByteArray(inputBytes, arrEND,8)) {
                             transToNextStatus();
-                            for (int i = 0; i < 3; i++) {
-                                serByteSend(arrBA2RE);
-                            }
+                            sendByteArrayWithAck(arrBA2RE);
                         } else {
                             Log.e(SAG, "Error RecMsg-Pic:" + inputBytes);
                         }
                     }
-                        break;
+                    break;
                     case EDIT:{
-                        if (checkByteArray(inputBytes, arrBA2RE)) {
+                        if (checkByteArray(inputBytes, arrBA2RE,8)) {
                             edit_status = 0;
                             transToNextStatus();
-                        } else if (checkByteArray(inputBytes, arrS2ROI1)) {
-                            edit_status = 1;
-                        } else if (checkByteArray(inputBytes, arrS2ROI2)) {
-                            edit_status = 2;
-                        } else if (checkByteArray(inputBytes, arrS2CAM1)) {
-                            edit_status = 3;
-                        } else if (checkByteArray(inputBytes, arrS2CAM2)) {
-                            edit_status = 4;
-                        } else if (checkByteArray(inputBytes, arrS2CAM3)) {
-                            edit_status = 5;
-                        } else if (checkByteArray(inputBytes, arrS2CAM4)) {
-                            edit_status = 6;
-                        } else if (checkByteArray(inputBytes, arrEND)) {
-                            for (int i = 0; i < 3; i++) {
-                                serByteSend(arrBA2RE);
+                        } else if (checkByteArray(inputBytes, arrS2ROI1,5)) {
+                            switch (inputBytes[6]) {
+                                case 0x31:
+                                    edit_status = 1;
+                                    break;
+                                case 0x32:
+                                    edit_status = 2;
+                                    break;
+                                case 0x33:
+                                    edit_status = 3;
+                                    break;
+                                case 0x34:
+                                    edit_status = 4;
+                                    break;
+                                default:
+                                    edit_status = 0;
+                                    break;
                             }
-                        }else {
 
                         }
+                        else if (checkByteArray(inputBytes, arrS2CAM1,5)) {
+                            switch (inputBytes[6]) {
+                                case 0x31:
+                                    edit_status = 5;
+                                    break;
+                                case 0x32:
+                                    edit_status = 6;
+                                    break;
+                                case 0x33:
+                                    edit_status = 7;
+                                    break;
+                                case 0x34:
+                                    edit_status = 8;
+                                    break;
+                                default:
+                                    edit_status = 0;
+                                    break;
+                            }
+                        } else if (checkByteArray(inputBytes, arrEND,8)) {
+                            
+                        } else if (checkByteArray(inputBytes, arrS2MODE,8)) {
+                            edit_status = 9;
+                        }
+                       else {
+                            if (edit_status != 0){
+                                setParameter(inputBytes,edit_status);
+                                edit_status = 0;
+                            }
+                        }
                     }break;
-
+                    case ACTIVE:
+                        break;
                     }
                 }
             }
