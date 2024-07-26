@@ -175,15 +175,6 @@ public class UtilTool {
         return chunks;
     }
 
-    public byte[] saveMatAsJpg(Mat inputMat){
-        ByteArrayOutputStream bass = new ByteArrayOutputStream();
-        boolean isSuccess = Imgcodecs.imencode(".jpg", inputMat, bass);
-        if (!isSuccess) {
-            // 处理错误
-            Log.e("ImageConversion", "Failed to encode image to JPG");
-        }
-        return bass.toByteArray();
-    }
 
     public String bitmapToString(Bitmap bitmap) {
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
