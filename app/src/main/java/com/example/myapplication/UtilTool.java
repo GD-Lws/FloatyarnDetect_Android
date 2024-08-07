@@ -13,7 +13,6 @@ import android.util.Log;
 import org.opencv.android.Utils;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
-import org.opencv.imgcodecs.Imgcodecs;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -26,6 +25,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -211,31 +211,41 @@ public class UtilTool {
     }
 
 
-    public String convertHexBytesToString(byte[] inputBytes) {
+    public static int[] inputRoiArray(byte[] inputBytes) {
         if (inputBytes.length != 8) {
-            return null;
+            throw new IllegalArgumentException("Input byte array must be exactly 8 bytes long.");
         }
+
+        byte[] x1Bytes = Arrays.copyOfRange(inputBytes, 0, 4);
+        byte[] y1Bytes = Arrays.copyOfRange(inputBytes, 4, 8);
+
+        String x1_str = convertHexBytesToString(x1Bytes);
+        String y1_str = convertHexBytesToString(y1Bytes);
+
+        int x1;
+        int y1;
+
+        try {
+            x1 = Integer.parseInt(x1_str);
+            y1 = Integer.parseInt(y1_str);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Error converting string to integer: " + e.getMessage());
+        }
+
+        return new int[]{x1, y1};
+    }
+
+    public static String convertHexBytesToString(byte[] inputBytes) {
         StringBuilder combinedString = new StringBuilder();
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < inputBytes.length; i++) {
+            if (inputBytes[i] < 0 || inputBytes[i] > 255) {
+                throw new IllegalArgumentException("Invalid byte value: " + inputBytes[i]);
+            }
             combinedString.append((char) inputBytes[i]);
         }
+
         return combinedString.toString();
     }
-
-    public int[] inputRoiArray(byte[] inputBytes){
-       byte[] arrInputRoi = {0x00,0x00,0x00,0x00,0x00};
-        for (int i = 0; i < 4; i++) {
-            arrInputRoi[i] = inputBytes[i];
-        }
-        int x1 = Integer.getInteger(convertHexBytesToString(arrInputRoi));
-        for (int i = 4; i < 8; i++) {
-            arrInputRoi[i] = inputBytes[i];
-        }
-        int y1 = Integer.getInteger(convertHexBytesToString(arrInputRoi));
-        int[] getRoi = {x1,y1};
-        return getRoi;
-    }
-
     public byte[] saveBitmapAsJpg(Bitmap bitmap){
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
         bitmap.compress(Bitmap.CompressFormat.JPEG, 100, byteArrayOutputStream);

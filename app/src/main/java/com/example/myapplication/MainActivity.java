@@ -69,6 +69,12 @@ import java.util.concurrent.atomic.AtomicReference;
 
 public class MainActivity extends Activity implements SerialInputOutputManager.Listener, View.OnClickListener {
 
+//    native-lib load
+    static {
+        System.loadLibrary("myapplication");
+    }
+    public native boolean detectYarnInImage(Bitmap inBitmap, Bitmap outBitmap, int[] roi1, int[] roi2, float[] det_par);
+    public native void drawRoiRange(Bitmap inBitmap, Bitmap outBitmap, int[] roi1, int[] roi2);
     /***************   Serial Value   *************************************/
     static class SerListItem {
         UsbDevice device;
@@ -349,18 +355,19 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 Imgproc.cvtColor(yMat, grayscaleMat, Imgproc.COLOR_YUV2GRAY_NV21);
 
                 // 创建 Bitmap 对象
-                Bitmap bitmap = Bitmap.createBitmap(yWidth, yHeight, Bitmap.Config.ARGB_8888);
-
+                Bitmap rawbitmap = Bitmap.createBitmap(yWidth, yHeight, Bitmap.Config.ARGB_8888);
+                Bitmap roibitmap = Bitmap.createBitmap(yWidth, yHeight, Bitmap.Config.ARGB_8888);
                 // 将灰度图像复制到 Bitmap 中
-                Utils.matToBitmap(grayscaleMat, bitmap);
+                Utils.matToBitmap(grayscaleMat, rawbitmap);
+                drawRoiRange(rawbitmap, roibitmap, arrRoi1, arrRoi2);
                 serialStatus tempStatus = serNowStatus.get();
                 if (flagGetImage) {
-                    byte[] jpgByteArray = myUtil.saveBitmapAsJpg(bitmap);
-                    try {
-                        myUtil.writeBytesAsHexToFile(jpgByteArray, saveFilePath, "saveByteArray.txt");
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
+                    byte[] jpgByteArray = myUtil.saveBitmapAsJpg(roibitmap);
+//                    try {
+//                        myUtil.writeBytesAsHexToFile(jpgByteArray, saveFilePath, "saveByteArray.txt");
+//                    } catch (IOException e) {
+//                        throw new RuntimeException(e);
+//                    }
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
