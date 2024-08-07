@@ -153,7 +153,6 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
 
     // 工具类
     private UtilTool myUtil;
-    private static Bitmap bm_roi_photo;
     private static final String FAG = "FileDebug";
     private static final String CAG = "CameraDebug";
     private static final String SAG = "SerialDebug";
@@ -644,9 +643,18 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
+                    resetFlag();
                     serRefresh();
+                    cameraClose();
                 }
             });
+        }
+
+        private void resetFlag(){
+            flagRoiSet = false;
+            flagDetect = false;
+            flagGetImage = false;
+            flagCameraOpen = false;
         }
 
         void serRefresh() {
@@ -875,21 +883,20 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         });
         heartbeatThread.start();
     }
-    private void transStatus(serialStatus newState){
+    private void transStatus(serialStatus newStatus){
         serialStatus preState = serNowStatus.get();
-        serNowStatus.set(newState);
-        serStatus("State:" + preState + " to " + serNowStatus.get() + "!");
-        Log.d(STG,"State:" + preState + " to "+ serNowStatus + "!");
-        serStatus("State:" + preState + " to " + serNowStatus + "!");
+        serNowStatus.set(newStatus);
+        serStatus("Status:" + preState + " to " + newStatus + "!");
+        Log.d(STG,"State:" + preState + " to "+ newStatus + "!");
     }
         private void transToNextStatus(){
             serialStatus preState = serNowStatus.get();
             switch (preState) {
                 case CLOSE:
-                case ACTIVE:
                     transStatus(serialStatus.OPEN);
                     break;
                 case OPEN:
+                case ACTIVE:
                 case EDIT:
                 case PIC:
                     transStatus(serialStatus.READY);
@@ -901,7 +908,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         }
 
         private boolean checkByteArray(byte[] inputBytes,byte[] targetBytes, int preIndex){
-        if (preIndex >= 8)return false;
+        if (preIndex > 8)return false;
         for (int i = 0; i < preIndex; i++) {
                 if (inputBytes[i] != targetBytes[i])return false;
             }
@@ -978,6 +985,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             serialStatus currentStatus = serNowStatus.get();
             if (checkByteArray(inputBytes,arrSTATUS,8) & flag_serConnect) {
                 serStrSend("ST" + currentStatus.ordinal() + "Mo"+ detectMode.ordinal());
+                return;
             }
             if (flag_serConnect) {
                 switch (currentStatus) {
