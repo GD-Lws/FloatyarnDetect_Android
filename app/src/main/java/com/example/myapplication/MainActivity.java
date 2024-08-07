@@ -964,7 +964,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             }
         }
 
-
+//        git test
         private int edit_status = 0;
         private void executeAction(byte[] inputBytes) throws InterruptedException, CameraAccessException {
             if (checkByteArray(inputBytes,arrSTATUS,8) & flag_serConnect) {
