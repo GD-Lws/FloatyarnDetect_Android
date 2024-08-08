@@ -199,7 +199,32 @@ Java_com_example_myapplication_MainActivity_blur(JNIEnv* env, jobject p_this, jo
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_example_myapplication_MainActivity_drawRoiRange(JNIEnv* env, jobject p_this, jobject bitmapIn, jobject bitmapOut,
+Java_com_example_myapplication_MainActivity_matDrawRoiRange(JNIEnv* env, jobject p_this, jlong matIn, jlong matOut,
+                                                         jintArray roi1, jintArray roi2) {
+    // 解引用传入的 Mat 指针
+    cv::Mat& matRaw = *(cv::Mat*) matIn;
+    cv::Mat& matAfter = *(cv::Mat*) matOut;
+
+    // 将 ROI 数组转换为 C++ 数组
+    jint* roi1Array = env->GetIntArrayElements(roi1, nullptr);
+    jint* roi2Array = env->GetIntArrayElements(roi2, nullptr);
+
+    // 确保 matOut 已经被正确初始化
+    if (matAfter.empty()) {
+        // 根据需要初始化 matAfter，这里假设与 matRaw 相同的尺寸和类型
+        matAfter.create(matRaw.size(), matRaw.type());
+    }
+
+    // 调用 myRectangle 函数绘制矩形
+    matAfter = myRectangle(matRaw, roi1Array, roi2Array);
+
+    // 释放 ROI 数组
+    env->ReleaseIntArrayElements(roi1, roi1Array, JNI_ABORT);
+    env->ReleaseIntArrayElements(roi2, roi2Array, JNI_ABORT);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_example_myapplication_MainActivity_bitmapDrawRoiRange(JNIEnv* env, jobject p_this, jobject bitmapIn, jobject bitmapOut,
                                                          jintArray roi1, jintArray roi2) {
     Mat src;
     bitmapToMat(env, bitmapIn, src, false);

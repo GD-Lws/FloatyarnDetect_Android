@@ -79,7 +79,9 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         System.loadLibrary("myapplication");
     }
     public native boolean detectYarnInImage(Bitmap inBitmap, Bitmap outBitmap, int[] roi1, int[] roi2, float[] det_par);
-    public native void drawRoiRange(Bitmap inBitmap, Bitmap outBitmap, int[] roi1, int[] roi2);
+    private native void matDrawRoiRange(long matIn, long matOut, int[] roi1, int[] roi2);
+    private native void bitmapDrawRoiRange(Bitmap bitmapIn, Bitmap bitmapOut, int[] roi1, int[] roi2);
+
     /***************   Serial Value   *************************************/
     static class SerListItem {
         UsbDevice device;
@@ -151,7 +153,6 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     private TextureView textureView_resultView;
     private boolean resultViewReadyFlag = false;
 
-    private boolean flagRoiSet = false;
     private boolean flagDetect = false;
     private boolean flagGetImage = false;
     private boolean flagCameraOpen = false;
@@ -160,9 +161,10 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     //  检测参数
     private int[] arrRoi1 = new int[]{512, 200, 722, 380};
     private int[] arrRoi2 = new int[]{512, 400, 662, 580};
-    private float[] arrDetectPar = new float[]{40.0f, 255.0f, 0.4f};
     private int cameraViewWidth = 1920;
     private int cameraViewHeight = 1080;
+    private float[] arrDetectPar = new float[]{40.0f, 255.0f, 0.4f};
+    private int knitRow = 0;
     /************************************************************************/
 
     // 工具类
@@ -206,7 +208,8 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     byte[] arrS2CAM3 = {0x53, 0x32, 0x43, 0x41, 0x4D, 0x33, 0x0d, 0x0a};
     //zoomRatio
     byte[] arrS2CAM4 = {0x53, 0x32, 0x43, 0x41, 0x4D, 0x34, 0x0d, 0x0a};
-    byte[] arrS2MODE = {0x53, 0x32, 0x4D, 0x4F, 0x44, 0x45, 0x0d, 0x0a};
+    byte[] arrMODE = {0x4D, 0x4F, 0x44, 0x45, 0x3A, 0x31, 0x0d, 0x0a};
+    byte[] arrYARN = {0x59, 0x52, 0x3A, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 
     /************************************************************************/
@@ -384,16 +387,16 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 // 转换为灰度图
                 Mat grayscaleMat = new Mat();
                 Imgproc.cvtColor(yMat, grayscaleMat, Imgproc.COLOR_YUV2GRAY_NV21);
-
-                // 创建 Bitmap 对象
-                Bitmap rawbitmap = Bitmap.createBitmap(yWidth, yHeight, Bitmap.Config.ARGB_8888);
-                Bitmap roibitmap = Bitmap.createBitmap(yWidth, yHeight, Bitmap.Config.ARGB_8888);
+//                Mat roiMat = new Mat();
+//                matDrawRoiRange(grayscaleMat.getNativeObjAddr(), roiMat.getNativeObjAddr(), arrRoi1, arrRoi2);
+                Bitmap outputBitmap = Bitmap.createBitmap(yWidth, yHeight, Bitmap.Config.ARGB_8888);
                 // 将灰度图像复制到 Bitmap 中
-                Utils.matToBitmap(grayscaleMat, rawbitmap);
-                drawRoiRange(rawbitmap, roibitmap, arrRoi1, arrRoi2);
+                Utils.matToBitmap(grayscaleMat, outputBitmap);
+                Bitmap roiBitmap = Bitmap.createBitmap(yWidth, yHeight, Bitmap.Config.ARGB_8888);
+                bitmapDrawRoiRange(outputBitmap, roiBitmap, arrRoi1, arrRoi2);
                 serialStatus tempStatus = serNowStatus.get();
                 if (flagGetImage) {
-                    byte[] jpgByteArray = myUtil.saveBitmapAsJpg(roibitmap);
+                    byte[] jpgByteArray = myUtil.saveBitmapAsJpg(roiBitmap);
 //                    try {
 //                        myUtil.writeBytesAsHexToFile(jpgByteArray, saveFilePath, "saveByteArray.txt");
 //                    } catch (IOException e) {
@@ -406,14 +409,14 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                         }
                     });
                     sendByteArrayWithAck(jpgByteArray,tempStatus);
-
                     flagGetImage = false;
                 }
+
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
                         if (resultViewReadyFlag) {
-                            drawBitmapToTextureView(roibitmap);
+                            drawBitmapToTextureView(roiBitmap);
                         }
                     }
                 });
@@ -712,7 +715,6 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         }
 
         private void resetFlag(){
-            flagRoiSet = false;
             flagDetect = false;
             flagGetImage = false;
             flagCameraOpen = false;
@@ -769,13 +771,13 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                         serDisconnect();
                     }
                 }
-                serStatus("Serial connect!");
+                serStatusDisplay("Serial connect!");
                 flag_serConnect = true;
                 transToNextStatus();
                 startHeartbeatThread();
             } else {
                 Toast.makeText(MainActivity.this, "currentItem.driver == null", Toast.LENGTH_SHORT).show();
-                serStatus("Serial driver is null!");
+                serStatusDisplay("Serial driver is null!");
                 flag_serConnect = false;
                 transStatus(serialStatus.CLOSE);
             }
@@ -796,7 +798,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             }
 
             flag_serConnect = false;
-            serStatus("Serial disconnect!");
+            serStatusDisplay("Serial disconnect!");
             transStatus(serialStatus.CLOSE);
         }
 
@@ -844,7 +846,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     boolean sentSuccessfully = false;
                     for (int attempt = 0; attempt < 3; attempt++) {
                         try {
-                            if (nextStatus == serialStatus.PIC)serStatus("Send Chunk end:" + chunkEnd);
+                            if (nextStatus == serialStatus.PIC) serStatusDisplay("Send Chunk end:" + chunkEnd);
                             usbSerialPort.write(chunk, WRITE_WAIT_MILLIS);
                             // 等待响应信号
                             if (waitForAck()) {
@@ -910,8 +912,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         return false;
     }
 
-
-        void serStatus(String str) {
+        void serStatusDisplay(String str) {
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -947,7 +948,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     private void transStatus(serialStatus newStatus){
         serialStatus preState = serNowStatus.get();
         serNowStatus.set(newStatus);
-        serStatus("Status:" + preState + " to " + newStatus + "!");
+        serStatusDisplay("Status:" + preState + " to " + newStatus + "!");
         Log.d(STG,"State:" + preState + " to "+ newStatus + "!");
     }
         private void transToNextStatus(){
@@ -1024,15 +1025,15 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 }
                 break;
                 case 9: {
-                    if (inputBytes[4] == 0x3A) {
-                        if (inputBytes[5] == 0x31) detectMode = operateMode.Detect;
-                        else if (inputBytes[5] == 0x32) {
+                    if (inputBytes[5] == 0x3A) {
+                        if (inputBytes[6] == 0x31) detectMode = operateMode.Detect;
+                        else if (inputBytes[6] == 0x32) {
                             detectMode = operateMode.Compare;
-                        } else if (inputBytes[5] == 0x33) {
+                        } else if (inputBytes[6] == 0x33) {
                             detectMode = operateMode.Record;
                         }
                     }
-                }
+                }break;
             }
             serByteSend(arrACK);
         }
@@ -1040,7 +1041,6 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
 //        git test
         private int edit_roi_status = 0;
         private int edit_params_status = 0;
-        private int edit_mode_status = 0;
 
         private void executeAction(byte[] inputBytes) throws InterruptedException, CameraAccessException {
             serialStatus currentStatus = serNowStatus.get();
@@ -1065,13 +1065,18 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                         break;
                     case READY:{
                         if (checkByteArray(inputBytes,arrRE2AC,8)) {
-                            transToNextStatus();
+                            if (flagCameraOpen) {
+                                serByteSend(arrPCO);
+                                transToNextStatus();
+                            } else {
+                                serOpenCamera();
+                                serByteSend(arrPCC);
+                            }
                         } else if (checkByteArray(inputBytes,arrRE2ED,8)) {
                             if (flagCameraOpen) {
                                 serByteSend(arrPCO);
                                 edit_params_status = 0;
                                 edit_roi_status = 0;
-                                edit_mode_status = 0;
                                 transStatus(serialStatus.EDIT);
                             } else {
                                 serOpenCamera();
@@ -1106,15 +1111,14 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                         if (checkByteArray(inputBytes, arrBA2RE,8)) {
                             edit_params_status = 0;
                             edit_roi_status = 0;
-                            edit_mode_status = 0;
                             transToNextStatus();
                         } else if (checkByteArray(inputBytes, arrS2ROI1,5)) {
                             edit_roi_status = 1;
                         }
                         else if (checkByteArray(inputBytes, arrS2CAM1,5)) {
                             edit_params_status = 4;
-                        } else if (checkByteArray(inputBytes, arrS2MODE,8)) {
-                            edit_mode_status = 9;
+                        } else if (checkByteArray(inputBytes, arrMODE,8)) {
+                            serSetParameter(inputBytes,5);
                         }
                        else {
                             if (edit_roi_status != 0){
@@ -1131,14 +1135,23 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                                     edit_params_status = 0;
                                 }
                             }
-                            if (edit_mode_status != 0){
-                                serSetParameter(inputBytes,edit_params_status);
-                                edit_mode_status = 0;
-                            }
                         }
                     }break;
                     case ACTIVE:
-                        break;
+                        if (checkByteArray(inputBytes, arrSTA,8)) {
+                            flagDetect = true;
+                            serByteSend(arrACK);
+                        } else if (checkByteArray(inputBytes, arrEND,8)) {
+                            flagDetect = false;
+                            transToNextStatus();
+                            serByteSend(arrBA2RE);
+                        } else if (checkByteArray(inputBytes, arrYARN, 3)) {
+                            byte[] arrYarnRow = Arrays.copyOfRange(inputBytes, 3, 8);
+                            knitRow = Integer.parseInt(myUtil.convertHexBytesToString(arrYarnRow));
+                            serStatusDisplay("KnitRow:" + knitRow);
+                        } else {
+                            Log.e(SAG, "Error RecMsg-Pic:" + inputBytes);
+                        }
                     }
                 }
             }
