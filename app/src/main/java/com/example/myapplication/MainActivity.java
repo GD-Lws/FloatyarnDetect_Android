@@ -78,7 +78,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     static {
         System.loadLibrary("myapplication");
     }
-    public native boolean detectYarnInImage(Bitmap inBitmap, Bitmap outBitmap, int[] roi1, int[] roi2, float[] det_par);
+    public native boolean detectYarnInImage(long inMat, long outMat, int[] roi1, int[] roi2, float[] det_par, String saveFilePath, int yarnRow);
     private native void matDrawRoiRange(long matIn, long matOut, int[] roi1, int[] roi2);
     private native void bitmapDrawRoiRange(Bitmap bitmapIn, Bitmap bitmapOut, int[] roi1, int[] roi2);
 
@@ -410,6 +410,9 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     });
                     sendByteArrayWithAck(jpgByteArray,tempStatus);
                     flagGetImage = false;
+                }
+                if (flagDetect){
+
                 }
 
                 runOnUiThread(new Runnable() {
