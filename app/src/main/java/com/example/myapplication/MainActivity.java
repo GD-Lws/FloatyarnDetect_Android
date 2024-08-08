@@ -8,8 +8,12 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.ImageFormat;
+import android.graphics.PorterDuff;
 import android.graphics.Rect;
+import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
@@ -35,6 +39,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Log;
 import android.util.Range;
+import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
@@ -132,6 +137,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     private long camera_exposureTime = new Long(7104250);
     private int camera_Iso = 1200;
     private float camera_focusDistance = 4.12f, camera_zoomRatio = 5.0F;
+
     private CameraCharacteristics cameraCharacteristics;
     private CameraManager cameraManager;
     private HandlerThread mCameraSessionThread, mImageThread, mCameraStateThread;
@@ -142,6 +148,8 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     //  用于控制多个线程对共享资源的访问，以确保同一时间只有一个线程可以访问相机设备
     private Semaphore mCameraOpenCloseLock = new Semaphore(1);
     private ImageReader mImageReader;
+    private TextureView textureView_resultView;
+    private boolean resultViewReadyFlag = false;
 
     private boolean flagRoiSet = false;
     private boolean flagDetect = false;
@@ -269,12 +277,35 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         tv_ser_rec = findViewById(R.id.tv_Ser_rec);
         tv_ser_state = findViewById(R.id.tv_ser_State);
         tv_camera_state = findViewById(R.id.tv_camera_State);
+        textureView_resultView = findViewById(R.id.textureView_resultShow);
 
         bt_ser_refresh.setOnClickListener(this);
         bt_ser_connect.setOnClickListener(this);
         bt_ser_disconnect.setOnClickListener(this);
         bt_ser_camera.setOnClickListener(this);
         bt_ser_roi.setOnClickListener(this);
+        textureView_resultView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
+            @Override
+            public void onSurfaceTextureAvailable(@NonNull SurfaceTexture surface, int width, int height) {
+                resultViewReadyFlag = true;
+            }
+
+            @Override
+            public void onSurfaceTextureSizeChanged(@NonNull SurfaceTexture surface, int width, int height) {
+
+            }
+
+            @Override
+            public boolean onSurfaceTextureDestroyed(@NonNull SurfaceTexture surface) {
+                resultViewReadyFlag = false;
+                return false;
+            }
+
+            @Override
+            public void onSurfaceTextureUpdated(@NonNull SurfaceTexture surface) {
+
+            }
+        });
     }
 
     @Override
@@ -378,10 +409,34 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
 
                     flagGetImage = false;
                 }
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (resultViewReadyFlag) {
+                            drawBitmapToTextureView(roibitmap);
+                        }
+                    }
+                });
                 readerImage.close();
             }
         }
     };
+
+    private void drawBitmapToTextureView(Bitmap bitmap) {
+        if (textureView_resultView.getSurfaceTexture() == null) {
+            return;
+        }
+
+        Canvas canvas = textureView_resultView.lockCanvas();
+        if (canvas != null) {
+            try {
+                canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
+                canvas.drawBitmap(bitmap, 0, 0, null);
+            } finally {
+                textureView_resultView.unlockCanvasAndPost(canvas);
+            }
+        }
+    }
 
     private void startBackgroundThread() {
         // 相机线程
@@ -539,7 +594,6 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     }
 
     private void cameraOpen(final int width, final int height) {
-        // 启动一个后台线程进行一些处理
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -666,13 +720,13 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
 
         void serRefresh() {
             usbManager = (UsbManager) MainActivity.this.getSystemService(Context.USB_SERVICE);
-            UsbSerialProber usbDefaultProber = UsbSerialProber.getDefaultProber();
-            UsbSerialProber usbCustomProber = CustomProber.getCustomProber();
+            UsbSerialProber usbDefaultProper = UsbSerialProber.getDefaultProber();
+            UsbSerialProber usbCustomProper = CustomProber.getCustomProber();
             serListItems.clear();
             for (UsbDevice device : usbManager.getDeviceList().values()) {
-                UsbSerialDriver driver = usbDefaultProber.probeDevice(device);
+                UsbSerialDriver driver = usbDefaultProper.probeDevice(device);
                 if (driver == null) {
-                    driver = usbCustomProber.probeDevice(device);
+                    driver = usbCustomProper.probeDevice(device);
                 }
                 if (driver != null) {
                     for (int port = 0; port < driver.getPorts().size(); port++)

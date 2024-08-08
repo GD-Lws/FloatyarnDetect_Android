@@ -211,7 +211,7 @@ Java_com_example_myapplication_MainActivity_drawRoiRange(JNIEnv* env, jobject p_
     Mat result = myRectangle(src, roi1Array, roi2Array);
 
     // 将绘制后的图像转换为 Bitmap 并返回
-    matToBitmap(env, result, bitmapOut, true);
+    matToBitmap(env, result, bitmapOut, false);
     src.release();
     result.release();
     env->ReleaseIntArrayElements(roi1, roi1Array, JNI_ABORT);
