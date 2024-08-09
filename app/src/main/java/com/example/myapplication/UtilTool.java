@@ -210,6 +210,17 @@ public class UtilTool {
         }
     }
 
+    private final int MINISO =  100;
+    private final int MAXISO =  1200;
+    private final float MAXFD =  12.0f;
+    private final float MINFD =  3.0f;
+
+
+
+//    public static boolean checkCameraParamsRange(long ET, int ISO, float FD, float ZR){
+//
+//    }
+
 
     public static int[] inputRoiArray(byte[] inputBytes) {
         if (inputBytes.length != 8) {
@@ -233,6 +244,17 @@ public class UtilTool {
         }
 
         return new int[]{x1, y1};
+    }
+
+//  用于填
+    public static String paddingString(String inputString){
+        int length = inputString.length();
+        if (length < 8){
+            for (int i = 0; i < 8-length; i++) {
+                inputString = "0" + inputString;
+            }
+        }
+        return inputString;
     }
 
     public static String convertHexBytesToString(byte[] inputBytes) {

@@ -1,5 +1,6 @@
 package com.example.myapplication;
 
+import android.annotation.SuppressLint;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
@@ -41,6 +42,34 @@ public class SQLiteTool extends SQLiteOpenHelper {
         Log.d(TAG, "数据库升级：从版本 " + oldVersion + " 升级到 " + newVersion);
     }
 
+//   获取当前所有表名
+    public String getTableName() {
+        StringBuilder allTableNames = new StringBuilder();
+        SQLiteDatabase db = getReadableDatabase(); // 使用当前实例的数据库连接
+        Cursor cursor = null;
+        try {
+            // 查询 sqlite_master 表以获取所有表名
+            String query = "SELECT name FROM sqlite_master WHERE type='table'";
+            cursor = db.rawQuery(query, null);
+            while (cursor.moveToNext()) {
+                @SuppressLint("Range") String tableName = cursor.getString(cursor.getColumnIndex("name"));
+                if (allTableNames.length() > 0) {
+                    allTableNames.append(", ");
+                }
+                allTableNames.append(tableName);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "获取表名时出错：" + e.getMessage());
+            return "";
+        } finally {
+            if (cursor != null && !cursor.isClosed()) {
+                cursor.close();
+            }
+            // 注意：通常不需要在这里关闭 db，因为它会被 SQLiteOpenHelper 管理
+            // 但如果你确实需要在某个时候关闭它，你应该确保它不是由 SQLiteOpenHelper 当前正在使用的实例
+        }
+        return allTableNames.toString();
+    }
     /**
      * 创建一个新表。
      *
@@ -83,6 +112,30 @@ public class SQLiteTool extends SQLiteOpenHelper {
             }
         }
         return result;
+    }
+
+
+
+    public boolean isTableExists(String tableName) {
+        SQLiteDatabase db = null;
+        Cursor cursor = null;
+        boolean exists = false;
+        try {
+            db = this.getReadableDatabase();
+            String query = "SELECT name FROM sqlite_master WHERE type='table' AND name=?";
+            cursor = db.rawQuery(query, new String[]{tableName});
+            exists = (cursor.getCount() > 0);
+        } catch (SQLException e) {
+            Log.e(TAG, "检查表是否存在时出错：" + e.getMessage());
+        } finally {
+            if (cursor != null && !cursor.isClosed()) {
+                cursor.close();
+            }
+            if (db != null && db.isOpen()) {
+                db.close();
+            }
+        }
+        return exists;
     }
 
     /**
@@ -133,6 +186,16 @@ public class SQLiteTool extends SQLiteOpenHelper {
             }
         }
         return rowsAffected;
+    }
+
+
+    ContentValues createContentValues(String key, String value, int lum, int region) {
+        ContentValues values = new ContentValues();
+        values.put("KEY", key);
+        values.put("VALUE", value);
+        values.put("LUM", lum);
+        values.put("REGION", region);
+        return values;
     }
 
     /**

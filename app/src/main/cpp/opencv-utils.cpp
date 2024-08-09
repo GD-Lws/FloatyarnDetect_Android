@@ -93,7 +93,7 @@ bool myDetect(Mat& roi_img, Mat& result_img, double thresh, double thresh_maxval
                              cv::Scalar(0, 255, 255), -1);  // 填充绿色
         } else {
             cv::drawContours(result_img, std::vector<std::vector<cv::Point>>{contour}, -1,
-                             cv::Scalar(255, 0, 255), -1);  // 填充红色
+                             cv::Scalar(255, 0, 150), -1);  // 填充红色
             cv::rectangle(result_img, bounding_rect, cv::Scalar(0, 0, 255), 2);  // 画红色矩形框
 //            cv::Mat det_range = roi_img(bounding_rect);
 //            detected_rois.push_back(det_range.clone()); // 添加ROI的克隆，以确保独立性

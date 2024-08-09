@@ -4,6 +4,7 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.PendingIntent;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -68,6 +69,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicReference;
@@ -128,7 +130,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     private static final int WRITE_WAIT_MILLIS = 2000;
     private int baudRate = 460800;
     private int linesPerChunks = 30;
-    private static final int CHUNK_SIZE = 10240; // 定义每个包的大小
+    private static final int CHUNK_SIZE = 10240 + 4096; // 定义每个包的大小
 
 /************************************************************************/
 
@@ -210,8 +212,16 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     byte[] arrS2CAM4 = {0x53, 0x32, 0x43, 0x41, 0x4D, 0x34, 0x0d, 0x0a};
     byte[] arrMODE = {0x4D, 0x4F, 0x44, 0x45, 0x3A, 0x31, 0x0d, 0x0a};
     byte[] arrYARN = {0x59, 0x52, 0x3A, 0x00, 0x00, 0x00, 0x00, 0x00};
+    byte[] arrS2Name = {0x53, 0x32, 0x4E, 0x61, 0x6D, 0x65, 0x0d, 0x0a};
+    byte[] arrTabName = {0x54, 0x41, 0x42, 0x4E,0x41, 0x4D, 0x0d, 0x0a};
+    byte[] arrDetect = {0x44, 0x45, 0x54, 0x45, 0x43, 0x54, 0x0d, 0x0a};
 
 
+    /***************** SQL ********************************************/
+
+    private SQLiteTool dbTool;
+    private String tableName;
+    private final String CREATETABLE = "KEY TEXT PRIMARY KEY, VALUE TEXT, LUM INTEGER, REGION INTEGER";
     /************************************************************************/
     @SuppressLint("MissingInflatedId")
     @Override
@@ -219,6 +229,8 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         myUtil = new UtilTool();
+        dbTool = new SQLiteTool(this);
+
         saveFilePath = getExternalCacheDir().getAbsolutePath() + "/";
         OpenCVLoader.initDebug(false);
         if (myUtil.checkPermissions(MainActivity.this)) {
@@ -397,11 +409,14 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 serialStatus tempStatus = serNowStatus.get();
                 if (flagGetImage) {
                     byte[] jpgByteArray = myUtil.saveBitmapAsJpg(roiBitmap);
+                    int byteSendLen = jpgByteArray.length + 16;
+                    serStrSend(myUtil.paddingString(String.valueOf(byteSendLen)));
 //                    try {
 //                        myUtil.writeBytesAsHexToFile(jpgByteArray, saveFilePath, "saveByteArray.txt");
 //                    } catch (IOException e) {
 //                        throw new RuntimeException(e);
 //                    }
+
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
@@ -1041,139 +1056,236 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             serByteSend(arrACK);
         }
 
-//        git test
+        // 状态变量
         private int edit_roi_status = 0;
         private int edit_params_status = 0;
+        private int edit_filename_status = 0;
 
+        // 处理各种状态
         private void executeAction(byte[] inputBytes) throws InterruptedException, CameraAccessException {
-            serialStatus currentStatus = serNowStatus.get();
-            if (checkByteArray(inputBytes,arrSTATUS,8) & flag_serConnect) {
-                serStrSend("ST" + currentStatus.ordinal() + "Mo"+ detectMode.ordinal());
-                return;
-            }
             if (flag_serConnect) {
+                serialStatus currentStatus = serNowStatus.get();
+
+                if (checkByteArray(inputBytes, arrSTATUS, 8)) {
+                    serStrSend("ST" + currentStatus.ordinal() + "Mo" + detectMode.ordinal());
+                    return;
+                }
+
                 switch (currentStatus) {
-                    case MSG_END:{
-                        if (checkByteArray(inputBytes, arrACK,8)) {
+                    case MSG_END:
+                        if (checkByteArray(inputBytes, arrACK, 8)) {
                             ackReceived = true;
                         }
-                    }break;
+                        break;
+
                     case OPEN:
-                        if (checkByteArray(inputBytes,arrOP2RE, 8) & flag_serConnect) {
-                            if (!flagCameraOpen) {
-                                serOpenCamera();
-                            }
-                            transToNextStatus();
-                        }
+                        handleOpenState(inputBytes);
                         break;
-                    case READY:{
-                        if (checkByteArray(inputBytes,arrRE2AC,8)) {
-                            if (flagCameraOpen) {
-                                serByteSend(arrPCO);
-                                transToNextStatus();
-                            } else {
-                                serOpenCamera();
-                                serByteSend(arrPCC);
-                            }
-                        } else if (checkByteArray(inputBytes,arrRE2ED,8)) {
-                            if (flagCameraOpen) {
-                                serByteSend(arrPCO);
-                                edit_params_status = 0;
-                                edit_roi_status = 0;
-                                transStatus(serialStatus.EDIT);
-                            } else {
-                                serOpenCamera();
-                                serByteSend(arrPCC);
-                            }
-                        } else if (checkByteArray(inputBytes,arrRE2PC,8)) {
-                            if (flagCameraOpen) {
-                                serByteSend(arrPCO);
-                                transStatus(serialStatus.PIC);
-                            } else {
-                                serOpenCamera();
-                                serByteSend(arrPCC);
-                            }
-                        } else {
-                            Log.d(SAG,"Error RecMsg-Ready:" + inputBytes);
-                        }
-                    }
+
+                    case READY:
+                        handleReadyState(inputBytes);
                         break;
-                    case PIC: {
-                        if (checkByteArray(inputBytes, arrSTA,8)) {
-                            flagGetImage = true;
-                        }
-                        else if (checkByteArray(inputBytes, arrEND,8)) {
-                            transToNextStatus();
-                            serByteSend(arrBA2RE);
-                        } else {
-                            Log.e(SAG, "Error RecMsg-Pic:" + inputBytes);
-                        }
-                    }
-                    break;
-                    case EDIT:{
-                        if (checkByteArray(inputBytes, arrBA2RE,8)) {
-                            edit_params_status = 0;
-                            edit_roi_status = 0;
-                            transToNextStatus();
-                        } else if (checkByteArray(inputBytes, arrS2ROI1,5)) {
-                            edit_roi_status = 1;
-                        }
-                        else if (checkByteArray(inputBytes, arrS2CAM1,5)) {
-                            edit_params_status = 4;
-                        } else if (checkByteArray(inputBytes, arrMODE,8)) {
-                            serSetParameter(inputBytes,5);
-                        }
-                       else {
-                            if (edit_roi_status != 0){
-                                serSetParameter(inputBytes,edit_roi_status);
-                                edit_roi_status++;
-                                if (edit_roi_status == 5){
-                                    edit_roi_status = 0;
-                                }
-                            }
-                            if (edit_params_status != 0){
-                                serSetParameter(inputBytes,edit_params_status);
-                                edit_params_status++;
-                                if (edit_params_status == 9){
-                                    edit_params_status = 0;
-                                }
-                            }
-                        }
-                    }break;
+
+                    case PIC:
+                        handlePicState(inputBytes);
+                        break;
+
+                    case EDIT:
+                        handleEditState(inputBytes);
+                        break;
+
                     case ACTIVE:
-                        if (checkByteArray(inputBytes, arrSTA,8)) {
-                            flagDetect = true;
-                            serByteSend(arrACK);
-                        } else if (checkByteArray(inputBytes, arrEND,8)) {
-                            flagDetect = false;
-                            transToNextStatus();
-                            serByteSend(arrBA2RE);
-                        } else if (checkByteArray(inputBytes, arrYARN, 3)) {
-                            byte[] arrYarnRow = Arrays.copyOfRange(inputBytes, 3, 8);
-                            knitRow = Integer.parseInt(myUtil.convertHexBytesToString(arrYarnRow));
-                            serStatusDisplay("KnitRow:" + knitRow);
-                        } else {
-                            Log.e(SAG, "Error RecMsg-Pic:" + inputBytes);
+                        handleActiveState(inputBytes);
+                        break;
+                }
+            }
+        }
+
+        // 处理 OPEN 状态
+        private void handleOpenState(byte[] inputBytes) {
+            if (checkByteArray(inputBytes, arrOP2RE, 8)) {
+                if (!flagCameraOpen) {
+                    serOpenCamera();
+                }
+                transToNextStatus();
+            }
+        }
+
+        // 处理 READY 状态
+        private void handleReadyState(byte[] inputBytes) {
+            if (checkByteArray(inputBytes, arrRE2AC, 8)) {
+                handleCameraState();
+                serByteSend(arrPCO);
+                transToNextStatus();
+            } else if (checkByteArray(inputBytes, arrRE2ED, 8)) {
+                handleCameraState();
+                serByteSend(arrPCO);
+                resetEditStatus();
+                transStatus(serialStatus.EDIT);
+            } else if (checkByteArray(inputBytes, arrRE2PC, 8)) {
+                handleCameraState();
+                serByteSend(arrPCO);
+                transStatus(serialStatus.PIC);
+            } else if (checkByteArray(inputBytes, arrTabName, 8)) {
+                String dbTableName = dbTool.getTableName();
+
+            } else {
+                Log.d(SAG, "Error RecMsg-Ready:" + Arrays.toString(inputBytes));
+            }
+        }
+
+        // 处理 PIC 状态
+        private void handlePicState(byte[] inputBytes) {
+            if (checkByteArray(inputBytes, arrSTA, 8)) {
+                flagGetImage = true;
+            } else if (checkByteArray(inputBytes, arrEND, 8)) {
+                transToNextStatus();
+                serByteSend(arrBA2RE);
+            } else {
+                Log.e(SAG, "Error RecMsg-Pic:" + Arrays.toString(inputBytes));
+            }
+        }
+
+        // 处理 EDIT 状态
+        private void handleEditState(byte[] inputBytes) throws CameraAccessException {
+            if (checkByteArray(inputBytes, arrBA2RE, 8)) {
+                resetEditStatus();
+                transToNextStatus();
+            } else if (checkByteArray(inputBytes, arrS2ROI1, 8)) {
+                resetEditStatus();
+                edit_roi_status = 1;
+                serStatusDisplay("Edit:ROI");
+            } else if (checkByteArray(inputBytes, arrS2CAM1, 8)) {
+                resetEditStatus();
+                edit_params_status = 5;
+                serStatusDisplay("Edit:CAM");
+            } else if (checkByteArray(inputBytes, arrMODE, 5)) {
+                serSetParameter(inputBytes, 9);
+            } else if (checkByteArray(inputBytes, arrS2Name, 8)) {
+                edit_filename_status = 1;
+            } else {
+                processEditStateData(inputBytes);
+            }
+        }
+
+        // 处理 ACTIVE 状态
+        private void handleActiveState(byte[] inputBytes) {
+            if (checkByteArray(inputBytes, arrDetect, 8)) {
+                flagDetect = true;
+                serByteSend(arrACK);
+            } else if (checkByteArray(inputBytes, arrEND, 8)) {
+                flagDetect = false;
+                transToNextStatus();
+                serByteSend(arrBA2RE);
+            } else if (checkByteArray(inputBytes, arrYARN, 3)) {
+                byte[] arrYarnRow = Arrays.copyOfRange(inputBytes, 3, 8);
+                knitRow = Integer.parseInt(myUtil.convertHexBytesToString(arrYarnRow));
+                serStatusDisplay("KnitRow:" + knitRow);
+            } else {
+                Log.e(SAG, "Error RecMsg-Active:" + Arrays.toString(inputBytes));
+            }
+        }
+
+        // 处理 CAMERA 状态
+        private void handleCameraState() {
+            if (!flagCameraOpen) {
+                serOpenCamera();
+            }
+        }
+        // 重置编辑状态
+        private void resetEditStatus() {
+            edit_params_status = 0;
+            edit_roi_status = 0;
+            edit_filename_status = 0;
+        }
+        // 处理编辑状态数据
+        private void processEditStateData(byte[] inputBytes) throws CameraAccessException {
+            if (edit_filename_status == 1) {
+                String recFileName = myUtil.convertHexBytesToString(inputBytes);
+                if (recFileName != tableName){
+                    tableName = recFileName;
+                    if (dbTool.isTableExists(tableName)){
+                        serStrSend("Exists");
+                        sqlUpdateCameraParameter();
+                    }else {
+                        serStrSend("Create");
+//                      记录模式
+                        if (detectMode == operateMode.Record)
+                        {
+                            dbTool.createTable(tableName, CREATETABLE);
+                            sqlInsertCameraParameter();
                         }
                     }
                 }
+                edit_filename_status = 0; // Reset after use
+            } else if (edit_roi_status > 0) {
+                serSetParameter(inputBytes, edit_roi_status);
+                edit_roi_status = edit_roi_status + 1;
+                serStatusDisplay("roiStatus:" + edit_roi_status);
+                if (edit_roi_status == 5){
+                    edit_roi_status = 0;
+                    transStatus(serialStatus.READY);
+                    if (detectMode == operateMode.Record){
+                        sqlUpdateCameraParameter();
+                    }
+                }
+            } else if (edit_params_status > 0) {
+                serSetParameter(inputBytes, edit_params_status);
+                serStatusDisplay("cameraStatus:" + edit_params_status);
+                edit_params_status = edit_params_status + 1;
+                if (edit_params_status == 9){
+                    edit_params_status = 0;
+                    setUpCameraPar();
+                    if (detectMode == operateMode.Record){
+                        sqlUpdateCameraParameter();
+                    }
+                }
             }
+        }
 
-    // 获取当前检测状态
-//    private String getMsgCurrentPar() {
-//        String msg_current_par = "roi_range: ";
-//        for (int i = 0; i < 4; i++) {
-//            msg_current_par = msg_current_par + arrRoi1[i] + ",";
-//        }
-//        for (int i = 0; i < 4; i++) {
-//            msg_current_par = msg_current_par + arrRoi2[i] + ",";
-//        }
-//        msg_current_par = msg_current_par + "\n camera_par: E:" + camera_exposureTime + " ISO:" + camera_Iso + " focus:"+ camera_focusDistance;
-//        msg_current_par = msg_current_par + "\n detect_par: ";
-//        for (int i = 0; i < 3; i++) {
-//            msg_current_par = msg_current_par + detect_par_arr[i];
-//        }
-//        return msg_current_par;
-//    }
+        private void sqlInsertCameraParameter(){
+            List<ContentValues> valuesList = new ArrayList<>();
+            valuesList.add(dbTool.createContentValues("camera_Iso", String.valueOf(camera_Iso), 0, 0));
+            valuesList.add(dbTool.createContentValues("camera_focusDistance", String.valueOf(camera_focusDistance), 0, 0));
+            valuesList.add(dbTool.createContentValues("camera_zoomRatio", String.valueOf(camera_zoomRatio), 0, 0));
+            valuesList.add(dbTool.createContentValues("camera_exposureTime", String.valueOf(camera_exposureTime), 0, 0));
+
+            valuesList.add(dbTool.createContentValues("arrRoi1", String.valueOf(arrayToSting(arrRoi1)), 0, 0));
+            valuesList.add(dbTool.createContentValues("arrRoi2", String.valueOf(arrayToSting(arrRoi2)), 0, 0));
+            // 批量插入数据
+            dbTool.batchInsertData(tableName, valuesList);
+        }
+
+        private void sqlUpdateCameraParameter(){
+            updateCameraParameter("camera_Iso",camera_Iso);
+            updateCameraParameter("camera_focusDistance",camera_focusDistance);
+            updateCameraParameter("camera_exposureTime",camera_exposureTime);
+            updateCameraParameter("camera_zoomRatio",camera_zoomRatio);
+            updateCameraParameter("arrRoi1",arrayToSting(arrRoi1));
+            updateCameraParameter("arrRoi2",arrayToSting(arrRoi2));
+         }
+
+             private String arrayToSting(int[] arr){
+                 StringBuilder backString = new StringBuilder();
+                 for (int element : arr) {
+                     backString.append(String.valueOf(element)).append(" ");
+                 }
+                 return backString.toString().trim();
+             }
+
+    private void updateCameraParameter(String key, Object value) {
+        ContentValues values = new ContentValues();
+        values.put("VALUE", String.valueOf(value)); // 更新的值
+
+        // 定义 WHERE 子句和参数
+        String whereClause = "KEY = ?";
+        String[] whereArgs = new String[] { key };
+
+        // 执行更新
+        int rowsAffected = dbTool.updateData(tableName, values, whereClause, whereArgs);
+
+        // 打印更新结果（可选）
+        Log.d(STG, "更新 " + key + " 时受影响的行数: " + rowsAffected);
+    }
 /************************************************************************/
 }
