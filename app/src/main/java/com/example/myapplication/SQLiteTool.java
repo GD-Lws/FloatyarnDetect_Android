@@ -42,6 +42,54 @@ public class SQLiteTool extends SQLiteOpenHelper {
         Log.d(TAG, "数据库升级：从版本 " + oldVersion + " 升级到 " + newVersion);
     }
 
+    public YarnDetectData fetchDataById(String tableName, int id) {
+        // 定义查询参数
+        String[] columns = {"KEY", "VALUE", "LUM", "REGION"}; // 要查询的列
+        String selection = "KEY = ?"; // WHERE子句
+        String[] selectionArgs = {String.valueOf(id)}; // WHERE子句中的参数
+        String groupBy = null; // GROUP BY子句
+        String having = null; // HAVING子句
+        String orderBy = null; // ORDER BY子句
+        SQLiteDatabase db = getReadableDatabase();
+        Cursor cursor = null;
+
+        try {
+            // 执行查询
+            cursor = db.query(tableName, columns, selection, selectionArgs, null, null, null);
+
+            // 处理查询结果
+            if (cursor != null && cursor.moveToFirst()) {
+                // 获取列索引
+                int keyIndex = cursor.getColumnIndex("KEY");
+                int valueIndex = cursor.getColumnIndex("VALUE");
+                int lumIndex = cursor.getColumnIndex("LUM");
+                int regionIndex = cursor.getColumnIndex("REGION");
+
+                // 获取列值
+                String rowKey = cursor.getString(keyIndex);
+                String value = cursor.getString(valueIndex);
+                int lum = cursor.getInt(lumIndex);
+                int region = cursor.getInt(regionIndex);
+
+                YarnDetectData yarnDetectData = new YarnDetectData(rowKey, value, lum, region);
+
+                // 处理数据（例如，打印到日志）
+                Log.d(TAG, "Key: " + rowKey + ", Value: " + value + ", Lum: " + lum + ", Region: " + region);
+                return yarnDetectData;
+            } else {
+                Log.d(TAG, "No data found for ID: " + id);
+                return null;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "查询数据时出错：" + e.getMessage());
+        } finally {
+            if (cursor != null) {
+                cursor.close(); // 关闭Cursor
+            }
+        }
+        return null;
+    }
+
 //   获取当前所有表名
     public String getTableName() {
         StringBuilder allTableNames = new StringBuilder();
@@ -76,18 +124,23 @@ public class SQLiteTool extends SQLiteOpenHelper {
      * @param tableName 表名
      * @param columns   列定义，例如 "id INTEGER PRIMARY KEY, name TEXT"
      */
-    public void createTable(String tableName, String columns) {
+    public boolean createTable(String tableName, String columns) {
+        if (tableName.length() == 0){
+            return false;
+        }
         SQLiteDatabase db = null;
         try {
             db = this.getWritableDatabase();
             String createTableSQL = "CREATE TABLE IF NOT EXISTS " + tableName + " (" + columns + ");";
             db.execSQL(createTableSQL);
+            return true;
         } catch (SQLException e) {
             Log.e(TAG, "创建表时出错：" + e.getMessage());
         } finally {
             if (db != null && db.isOpen()) {
                 db.close();
             }
+            return false;
         }
     }
 
@@ -320,6 +373,8 @@ public class SQLiteTool extends SQLiteOpenHelper {
             Log.e(TAG, "开始事务时出错：" + e.getMessage());
         }
     }
+
+
 
     /**
      * 设置事务成功。

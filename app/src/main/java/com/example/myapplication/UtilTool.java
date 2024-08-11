@@ -6,9 +6,12 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CameraManager;
 import android.media.Image;
 import android.util.Base64;
 import android.util.Log;
+import android.util.Range;
 
 import org.opencv.android.Utils;
 import org.opencv.core.CvType;
@@ -221,6 +224,51 @@ public class UtilTool {
 //
 //    }
 
+    public static void logCameraParamsRange(String tag,CameraManager cameraManager){
+        try {
+            String[] cameraIds = cameraManager.getCameraIdList();
+            for (String cameraId : cameraIds) {
+                CameraCharacteristics characteristics = cameraManager.getCameraCharacteristics(cameraId);
+
+                // 打印感光度范围
+                Range<Integer> sensitivityRange = characteristics.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE);
+                if (sensitivityRange != null) {
+                    Log.d(tag, "ISO Sensitivity Range: " + sensitivityRange.getLower() + " to " + sensitivityRange.getUpper());
+                } else {
+                    Log.d(tag, "ISO Sensitivity Range: Not available");
+                }
+
+                // 打印曝光时间范围
+                Range<Long> exposureTimeRange = characteristics.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE);
+                if (exposureTimeRange != null) {
+                    Log.d(tag, "Exposure Time Range: " + exposureTimeRange.getLower() + " to " + exposureTimeRange.getUpper() + " nanoseconds");
+                } else {
+                    Log.d(tag, "Exposure Time Range: Not available");
+                }
+
+                // 打印焦距范围
+                float[] focalLengths = characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS);
+                if (focalLengths != null && focalLengths.length > 0) {
+                    float minFocalLength = Float.MAX_VALUE;
+                    float maxFocalLength = Float.MIN_VALUE;
+
+                    for (float focalLength : focalLengths) {
+                        if (focalLength < minFocalLength) {
+                            minFocalLength = focalLength;
+                        }
+                        if (focalLength > maxFocalLength) {
+                            maxFocalLength = focalLength;
+                        }
+                    }
+
+                    Log.d(tag, "Focal Length Range: " + minFocalLength + " to " + maxFocalLength + " mm");
+            }
+        }
+        } catch (Exception e) {
+            Log.e(tag, "Error accessing camera characteristics", e);
+        }
+    }
+
 
     public static int[] inputRoiArray(byte[] inputBytes) {
         if (inputBytes.length != 8) {
@@ -413,7 +461,7 @@ public class UtilTool {
     private static final float MIN_ZOOM_RATIO = 1.0f;
     private static final float MAX_ZOOM_RATIO = 10.0f;
 
-    boolean isCameraParametersValid(long exposureTime, int iso, float focusDistance, float zoomRatio) {
+    boolean checkCameraParametersValid(long exposureTime, int iso, float focusDistance, float zoomRatio) {
         // 检查曝光时间是否在合法范围内
         if (exposureTime < MIN_EXPOSURE_TIME || exposureTime > MAX_EXPOSURE_TIME) {
             return false;

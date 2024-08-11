@@ -6,66 +6,118 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="曝光时间:"
-        android:textSize="20dp"
-        />
-
-    <EditText
-        android:id="@+id/et_exposuretime"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textSize="20dp"
-        android:hint="100000~32000000000"
-        android:inputType="number"
+        android:text="SQL TEST:"
+        android:textSize="40dp"
         />
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="感光度:"
+        android:text="TableName:"
         android:textSize="20dp"
         />
 
     <EditText
-        android:id="@+id/et_iso"
+        android:id="@+id/et_sql_tablename"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="20dp"
+        />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="KEY:"
+        android:textSize="20dp"
+        />
+
+    <EditText
+        android:id="@+id/et_sql_key"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="20dp"
+        android:hint="camera_fd"
+        />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Value:"
+        android:textSize="20dp"
+        />
+
+    <EditText
+        android:id="@+id/et_sql_value"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="100~3200"
         android:textSize="20dp"
         android:inputType="number"
-
         />
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="焦距:"
+        android:text="LUM:"
         android:textSize="20dp"
         />
     <EditText
-        android:id="@+id/et_focusdistance"
+        android:id="@+id/et_sql_lum"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="0.2~10.0"
         android:textSize="20dp"
-        android:inputType="numberDecimal"
         />
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="缩放:"
+        android:text="Region:"
         android:textSize="20dp"
         />
 
     <EditText
-        android:id="@+id/et_zoomarea"
+        android:id="@+id/et_sql_region"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="1.0~10.0"
         android:textSize="20dp"
-        android:inputType="numberDecimal"
         />
+    <Button
+        android:id="@+id/bt_sql_setTableName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="SQL_TabelName" />
 
+    <Button
+        android:id="@+id/bt_sql_write"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="SQL_write" />
 
-
+    <Button
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="SQL_load"
+        android:id="@+id/bt_sql_load"
+        />
+    <Button
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="SQL_Refresh"
+        android:id="@+id/bt_sql_refresh"
+        />
+    <EditText
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="find_Key"
+        android:textSize="30dp"
+        android:id="@+id/ed_sql_findKey"
+        />
+    <Button
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Find"
+        android:textSize="30dp"
+        android:id="@+id/bt_sql_find"
+        />
 </LinearLayout>

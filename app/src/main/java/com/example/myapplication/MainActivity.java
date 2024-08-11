@@ -15,6 +15,7 @@ import android.graphics.ImageFormat;
 import android.graphics.PorterDuff;
 import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
+import android.graphics.drawable.ColorDrawable;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
@@ -40,13 +41,17 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Log;
 import android.util.Range;
+import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ListView;
+import android.widget.PopupWindow;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -176,6 +181,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     private static final String SAG = "SerialDebug";
     private static final String DAG = "DetectDebug";
     private static final String STG = "StateDebug";
+    private static final String QTG = "SQLDebug";
     private String saveFilePath;
     //    传输图标响应标志
     private volatile boolean ackReceived = false;
@@ -212,15 +218,19 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     byte[] arrS2CAM4 = {0x53, 0x32, 0x43, 0x41, 0x4D, 0x34, 0x0d, 0x0a};
     byte[] arrMODE = {0x4D, 0x4F, 0x44, 0x45, 0x3A, 0x31, 0x0d, 0x0a};
     byte[] arrYARN = {0x59, 0x52, 0x3A, 0x00, 0x00, 0x00, 0x00, 0x00};
-    byte[] arrS2Name = {0x53, 0x32, 0x4E, 0x61, 0x6D, 0x65, 0x0d, 0x0a};
+    byte[] arrS2NAME = {0x53, 0x32, 0x4E, 0x61, 0x6D, 0x65, 0x0d, 0x0a};
     byte[] arrTabName = {0x54, 0x41, 0x42, 0x4E,0x41, 0x4D, 0x0d, 0x0a};
     byte[] arrDetect = {0x44, 0x45, 0x54, 0x45, 0x43, 0x54, 0x0d, 0x0a};
+
+    //  心跳线程
+    private Thread heartbeatThread;
 
 
     /***************** SQL ********************************************/
 
+    private Button bt_sql_info;
     private SQLiteTool dbTool;
-    private String tableName;
+    private String knitTableName;
     private final String CREATETABLE = "KEY TEXT PRIMARY KEY, VALUE TEXT, LUM INTEGER, REGION INTEGER";
     /************************************************************************/
     @SuppressLint("MissingInflatedId")
@@ -288,12 +298,14 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         bt_ser_send = findViewById(R.id.bt_Ser_send);
         bt_ser_camera = findViewById(R.id.bt_Ser_camera);
         bt_ser_roi = findViewById(R.id.bt_Ser_roi);
+        bt_sql_info = findViewById(R.id.bt_Ser_sql);
 
         tv_ser_rec = findViewById(R.id.tv_Ser_rec);
         tv_ser_state = findViewById(R.id.tv_ser_State);
         tv_camera_state = findViewById(R.id.tv_camera_State);
         textureView_resultView = findViewById(R.id.textureView_resultShow);
 
+        bt_sql_info.setOnClickListener(this);
         bt_ser_refresh.setOnClickListener(this);
         bt_ser_connect.setOnClickListener(this);
         bt_ser_disconnect.setOnClickListener(this);
@@ -341,6 +353,9 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             serOpenCamera();
         } else if (id == R.id.bt_Ser_roi) {
             flagGetImage = true;
+        } else if (id == R.id.bt_Ser_sql) {
+            showPopupSQLWindow();
+            Toast.makeText(MainActivity.this, "SQL click", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -940,8 +955,68 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             });
         }
 
-//  心跳线程
-    private Thread heartbeatThread;
+    private void serSetParameter(byte[] inputBytes, int par_status) throws CameraAccessException {
+        switch (par_status) {
+            case 1: {
+                int[] roiRange1_x1y1 = myUtil.inputRoiArray(inputBytes);
+                arrRoi1[0] = roiRange1_x1y1[0];
+                arrRoi1[1] = roiRange1_x1y1[1];
+            }
+            break;
+            case 2: {
+                int[] roiRange1_x2y2 = myUtil.inputRoiArray(inputBytes);
+                arrRoi1[2] = roiRange1_x2y2[0];
+                arrRoi1[3] = roiRange1_x2y2[1];
+            }
+            break;
+            case 3: {
+                int[] roiRange2_x1y1 = myUtil.inputRoiArray(inputBytes);
+                arrRoi2[0] = roiRange2_x1y1[0];
+                arrRoi2[1] = roiRange2_x1y1[1];
+            }
+            break;
+            case 4: {
+                int[] roiRange2_x2y2 = myUtil.inputRoiArray(inputBytes);
+                arrRoi2[2] = roiRange2_x2y2[0];
+                arrRoi2[3] = roiRange2_x2y2[1];
+            }
+            break;
+            case 5: {
+                String inputExposureTime = myUtil.convertHexBytesToString(inputBytes);
+                camera_exposureTime = Long.parseLong(inputExposureTime);
+            }
+            break;
+            case 6: {
+                String inputIso = myUtil.convertHexBytesToString(inputBytes);
+                camera_Iso = Integer.parseInt(inputIso);
+            }
+            break;
+            case 7: {
+                String inputFocusDistance = myUtil.convertHexBytesToString(inputBytes);
+                camera_focusDistance = Float.parseFloat(inputFocusDistance);
+            }
+            break;
+            case 8: {
+                String inputZoomRatio = myUtil.convertHexBytesToString(inputBytes);
+                camera_zoomRatio = Float.parseFloat(inputZoomRatio);
+            }
+            break;
+            case 9: {
+                if (inputBytes[4] == 0x3A) {
+                    if (inputBytes[5] == 0x31){
+                        detectMode = operateMode.Detect;
+                    }
+                    else if (inputBytes[5] == 0x32) {
+                        detectMode = operateMode.Compare;
+                    } else if (inputBytes[5] == 0x33) {
+                        detectMode = operateMode.Record;
+                    }
+                }
+            }break;
+        }
+        serByteSend(arrACK);
+    }
+
     private void startHeartbeatThread() {
         heartbeatThread = new Thread(new Runnable() {
             @Override
@@ -969,6 +1044,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         serStatusDisplay("Status:" + preState + " to " + newStatus + "!");
         Log.d(STG,"State:" + preState + " to "+ newStatus + "!");
     }
+
         private void transToNextStatus(){
             serialStatus preState = serNowStatus.get();
             switch (preState) {
@@ -996,66 +1072,8 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         }
 
 
-        private void serSetParameter(byte[] inputBytes, int par_status) throws CameraAccessException {
-            switch (par_status) {
-                case 1: {
-                    int[] roiRange1_x1y1 = myUtil.inputRoiArray(inputBytes);
-                    arrRoi1[0] = roiRange1_x1y1[0];
-                    arrRoi1[1] = roiRange1_x1y1[1];
-                }
-                break;
-                case 2: {
-                    int[] roiRange1_x2y2 = myUtil.inputRoiArray(inputBytes);
-                    arrRoi1[2] = roiRange1_x2y2[0];
-                    arrRoi1[3] = roiRange1_x2y2[1];
-                }
-                break;
-                case 3: {
-                    int[] roiRange2_x1y1 = myUtil.inputRoiArray(inputBytes);
-                    arrRoi2[0] = roiRange2_x1y1[0];
-                    arrRoi2[1] = roiRange2_x1y1[1];
-                }
-                break;
-                case 4: {
-                    int[] roiRange2_x2y2 = myUtil.inputRoiArray(inputBytes);
-                    arrRoi2[2] = roiRange2_x2y2[0];
-                    arrRoi2[3] = roiRange2_x2y2[1];
-                }
-                break;
-                case 5: {
-                    String inputExposureTime = myUtil.convertHexBytesToString(inputBytes);
-                    camera_exposureTime = Long.parseLong(inputExposureTime);
-                }
-                break;
-                case 6: {
-                    String inputIso = myUtil.convertHexBytesToString(inputBytes);
-                    camera_Iso = Integer.parseInt(inputIso);
-                }
-                break;
-                case 7: {
-                    String inputFocusDistance = myUtil.convertHexBytesToString(inputBytes);
-                    camera_focusDistance = Float.parseFloat(inputFocusDistance);
-                }
-                break;
-                case 8: {
-                    String inputZoomRatio = myUtil.convertHexBytesToString(inputBytes);
-                    camera_zoomRatio = Float.parseFloat(inputZoomRatio);
-                }
-                break;
-                case 9: {
-                    if (inputBytes[5] == 0x3A) {
-                        if (inputBytes[6] == 0x31) detectMode = operateMode.Detect;
-                        else if (inputBytes[6] == 0x32) {
-                            detectMode = operateMode.Compare;
-                        } else if (inputBytes[6] == 0x33) {
-                            detectMode = operateMode.Record;
-                        }
-                    }
-                }break;
-            }
-            serByteSend(arrACK);
-        }
 
+/************************  串口数据处理  ******************************************/
         // 状态变量
         private int edit_roi_status = 0;
         private int edit_params_status = 0;
@@ -1161,7 +1179,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 serStatusDisplay("Edit:CAM");
             } else if (checkByteArray(inputBytes, arrMODE, 5)) {
                 serSetParameter(inputBytes, 9);
-            } else if (checkByteArray(inputBytes, arrS2Name, 8)) {
+            } else if (checkByteArray(inputBytes, arrS2NAME, 8)) {
                 edit_filename_status = 1;
             } else {
                 processEditStateData(inputBytes);
@@ -1202,22 +1220,12 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         private void processEditStateData(byte[] inputBytes) throws CameraAccessException {
             if (edit_filename_status == 1) {
                 String recFileName = myUtil.convertHexBytesToString(inputBytes);
-                if (recFileName != tableName){
-                    tableName = recFileName;
-                    if (dbTool.isTableExists(tableName)){
-                        serStrSend("Exists");
-                        sqlUpdateCameraParameter();
-                    }else {
-                        serStrSend("Create");
-//                      记录模式
-                        if (detectMode == operateMode.Record)
-                        {
-                            dbTool.createTable(tableName, CREATETABLE);
-                            sqlInsertCameraParameter();
-                        }
-                    }
+                if (recFileName != knitTableName){
+                    knitTableName = recFileName;
+                    sqlCreateTable(knitTableName);
                 }
                 edit_filename_status = 0; // Reset after use
+                serByteSend(arrACK);
             } else if (edit_roi_status > 0) {
                 serSetParameter(inputBytes, edit_roi_status);
                 edit_roi_status = edit_roi_status + 1;
@@ -1226,7 +1234,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     edit_roi_status = 0;
                     transStatus(serialStatus.READY);
                     if (detectMode == operateMode.Record){
-                        sqlUpdateCameraParameter();
+                        sqlUpdateCameraParameter(knitTableName);
                     }
                 }
             } else if (edit_params_status > 0) {
@@ -1236,14 +1244,50 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 if (edit_params_status == 9){
                     edit_params_status = 0;
                     setUpCameraPar();
-                    if (detectMode == operateMode.Record){
-                        sqlUpdateCameraParameter();
+                    if (myUtil.checkCameraParametersValid(camera_exposureTime, camera_Iso, camera_focusDistance, camera_zoomRatio)){
+                        mCaptureSession.setRepeatingRequest(mPreviewBuilder.build(), mCaptureCallback, mCameraSessionHandler);
+                        if (detectMode == operateMode.Record){
+                            sqlUpdateCameraParameter(knitTableName);
+                        }
+                    }else {
+                        serStrSend("Err:4");
                     }
                 }
             }
         }
 
-        private void sqlInsertCameraParameter(){
+/************************  串口数据处理  ******************************************/
+
+/************************  SQL处理  ******************************************/
+
+    private static final int TABLE_EXISTS = 1;
+    private static final int TABLE_CREATED = 2;
+    private static final int OPERATION_FAILED = -1;
+
+    private int sqlCreateTable(String tableName) {
+        if (tableName.length() == 0){
+            return OPERATION_FAILED;
+        }
+        if (dbTool.isTableExists(tableName)) {
+            Log.d(QTG, "Table TABLE_EXISTS");
+            sqlUpdateCameraParameter(tableName);
+            return TABLE_EXISTS;
+        } else {
+            Log.d(QTG, "Table TABLE_CREATE");
+            try {
+                if (dbTool.createTable(tableName, CREATETABLE)) {
+                    sqlInsertCameraParameter(tableName);
+                    return TABLE_CREATED;
+                } else {
+                    return OPERATION_FAILED;
+                }
+            } catch (Exception e) {
+                return OPERATION_FAILED;
+            }
+        }
+    }
+
+    private void sqlInsertCameraParameter(String tableName){
             List<ContentValues> valuesList = new ArrayList<>();
             valuesList.add(dbTool.createContentValues("camera_Iso", String.valueOf(camera_Iso), 0, 0));
             valuesList.add(dbTool.createContentValues("camera_focusDistance", String.valueOf(camera_focusDistance), 0, 0));
@@ -1256,24 +1300,24 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             dbTool.batchInsertData(tableName, valuesList);
         }
 
-        private void sqlUpdateCameraParameter(){
-            updateCameraParameter("camera_Iso",camera_Iso);
-            updateCameraParameter("camera_focusDistance",camera_focusDistance);
-            updateCameraParameter("camera_exposureTime",camera_exposureTime);
-            updateCameraParameter("camera_zoomRatio",camera_zoomRatio);
-            updateCameraParameter("arrRoi1",arrayToSting(arrRoi1));
-            updateCameraParameter("arrRoi2",arrayToSting(arrRoi2));
+        private void sqlUpdateCameraParameter(String tableName){
+            sqlUpdateCameraParameter(tableName, "camera_Iso",camera_Iso);
+            sqlUpdateCameraParameter(tableName, "camera_focusDistance",camera_focusDistance);
+            sqlUpdateCameraParameter(tableName, "camera_exposureTime",camera_exposureTime);
+            sqlUpdateCameraParameter(tableName, "camera_zoomRatio",camera_zoomRatio);
+            sqlUpdateCameraParameter(tableName, "arrRoi1",arrayToSting(arrRoi1));
+            sqlUpdateCameraParameter(tableName, "arrRoi2",arrayToSting(arrRoi2));
          }
 
-             private String arrayToSting(int[] arr){
-                 StringBuilder backString = new StringBuilder();
-                 for (int element : arr) {
-                     backString.append(String.valueOf(element)).append(" ");
-                 }
-                 return backString.toString().trim();
+         private String arrayToSting(int[] arr){
+             StringBuilder backString = new StringBuilder();
+             for (int element : arr) {
+                 backString.append(String.valueOf(element)).append(" ");
              }
+             return backString.toString().trim();
+         }
 
-    private void updateCameraParameter(String key, Object value) {
+    private void sqlUpdateCameraParameter(String tablename, String key, Object value) {
         ContentValues values = new ContentValues();
         values.put("VALUE", String.valueOf(value)); // 更新的值
 
@@ -1282,10 +1326,81 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         String[] whereArgs = new String[] { key };
 
         // 执行更新
-        int rowsAffected = dbTool.updateData(tableName, values, whereClause, whereArgs);
+        int rowsAffected = dbTool.updateData(tablename, values, whereClause, whereArgs);
 
         // 打印更新结果（可选）
         Log.d(STG, "更新 " + key + " 时受影响的行数: " + rowsAffected);
+    }
+
+    private YarnDetectData sqlGetDetectInfo(int yarnRow){
+        YarnDetectData get_yarn_data = dbTool.fetchDataById(knitTableName, yarnRow);
+        return get_yarn_data;
+    }
+
+//    SQL功能测试窗口
+    private PopupWindow popupSQLWindow;
+    private void showPopupSQLWindow() {
+        // 创建LayoutInflater实例
+        LayoutInflater inflater = (LayoutInflater) getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+
+        // 填充PopupWindow布局
+        View popupView = inflater.inflate(R.layout.dig_camera_par_set, null);
+        // 创建PopupWindow对象
+        popupSQLWindow = new PopupWindow(popupView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, true);
+        // 设置PopupWindow的背景，这样点击外部区域就可以关闭PopupWindow
+        popupSQLWindow.setBackgroundDrawable(new ColorDrawable(Color.WHITE));
+        // 设置PopupWindow的动画效果（可选）
+        popupSQLWindow.setAnimationStyle(android.R.style.Animation_Dialog);
+
+        // 查找布局中的视图
+        EditText sql_table_name = popupView.findViewById(R.id.et_sql_tablename);
+        EditText sql_key = popupView.findViewById(R.id.et_sql_key);
+        EditText sql_value = popupView.findViewById(R.id.et_sql_value);
+        EditText sql_lum = popupView.findViewById(R.id.et_sql_lum);
+        EditText sql_region = popupView.findViewById(R.id.et_sql_region);
+        EditText sql_find_key = popupView.findViewById(R.id.ed_sql_findKey);
+
+        Button bt_tableName_set = popupView.findViewById(R.id.bt_sql_setTableName);
+        bt_tableName_set.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String getTableName = sql_table_name.getText().toString();
+                Log.d(QTG, "TableName:"+ getTableName);
+                if (sqlCreateTable(getTableName) == 2) {
+                    Toast.makeText(MainActivity.this, "Create Table", Toast.LENGTH_SHORT).show();
+                } else if (sqlCreateTable(getTableName) == 1) {
+                    Toast.makeText(MainActivity.this, "Table Exists", Toast.LENGTH_SHORT).show();
+                }else {
+                    Toast.makeText(MainActivity.this, "Fail to create table", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+
+        Button bt_sql_write = popupView.findViewById(R.id.bt_sql_write);
+        bt_sql_write.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                // String key = sql_key.getText().toString();
+                // String value = sql_value.getText().toString();
+                // String lum = sql_lum.getText().toString();
+                // String region = sql_region.getText().toString();
+                String getTableName = sql_table_name.getText().toString();
+                sqlInsertCameraParameter(getTableName);
+                Toast.makeText(MainActivity.this, "写入参数成功", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        Button bt_sql_load = popupView.findViewById(R.id.bt_sql_load);
+        bt_sql_load.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                // 这里添加加载数据的处理代码
+            }
+        });
+
+        // 显示PopupWindow
+        View rootView = findViewById(android.R.id.content); // 获取根视图
+        popupSQLWindow.showAtLocation(rootView, Gravity.CENTER, 0, 0); // 在屏幕中心显示PopupWindow
     }
 /************************************************************************/
 }
