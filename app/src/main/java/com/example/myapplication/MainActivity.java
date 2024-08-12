@@ -231,7 +231,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     private Button bt_sql_info;
     private SQLiteTool dbTool;
     private String knitTableName;
-    private final String CREATETABLE = "KEY TEXT PRIMARY KEY, VALUE TEXT, LUM INTEGER, REGION INTEGER";
+    private final String CREATETABLE = "";
     /************************************************************************/
     @SuppressLint("MissingInflatedId")
     @Override
@@ -1273,18 +1273,23 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             sqlUpdateCameraParameter(tableName);
             return TABLE_EXISTS;
         } else {
-            Log.d(QTG, "Table TABLE_CREATE");
             try {
-                if (dbTool.createTable(tableName, CREATETABLE)) {
+                if (dbTool.createTable(tableName)) {
                     sqlInsertCameraParameter(tableName);
+                    Log.d(QTG, "Table TABLE_CREATE");
                     return TABLE_CREATED;
                 } else {
+                    Log.d(QTG, "Table TABLE_CREATE_FAILD");
                     return OPERATION_FAILED;
                 }
             } catch (Exception e) {
                 return OPERATION_FAILED;
             }
         }
+    }
+
+    private long sqlInsertDetectResult(String tableName, YarnDetectData yarnDetectData){
+       return dbTool.insertData(tableName,yarnDetectData.getContentValues());
     }
 
     private void sqlInsertCameraParameter(String tableName){
@@ -1333,7 +1338,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     }
 
     private YarnDetectData sqlGetDetectInfo(int yarnRow){
-        YarnDetectData get_yarn_data = dbTool.fetchDataById(knitTableName, yarnRow);
+        YarnDetectData get_yarn_data = dbTool.fetchDataById(knitTableName, String.valueOf(yarnRow));
         return get_yarn_data;
     }
 
@@ -1344,7 +1349,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         LayoutInflater inflater = (LayoutInflater) getSystemService(Context.LAYOUT_INFLATER_SERVICE);
 
         // 填充PopupWindow布局
-        View popupView = inflater.inflate(R.layout.dig_camera_par_set, null);
+        View popupView = inflater.inflate(R.layout.dig_sql_test, null);
         // 创建PopupWindow对象
         popupSQLWindow = new PopupWindow(popupView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, true);
         // 设置PopupWindow的背景，这样点击外部区域就可以关闭PopupWindow
@@ -1358,7 +1363,6 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         EditText sql_value = popupView.findViewById(R.id.et_sql_value);
         EditText sql_lum = popupView.findViewById(R.id.et_sql_lum);
         EditText sql_region = popupView.findViewById(R.id.et_sql_region);
-        EditText sql_find_key = popupView.findViewById(R.id.ed_sql_findKey);
 
         Button bt_tableName_set = popupView.findViewById(R.id.bt_sql_setTableName);
         bt_tableName_set.setOnClickListener(new View.OnClickListener() {
@@ -1366,9 +1370,10 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             public void onClick(View v) {
                 String getTableName = sql_table_name.getText().toString();
                 Log.d(QTG, "TableName:"+ getTableName);
-                if (sqlCreateTable(getTableName) == 2) {
+                int create_flag = sqlCreateTable(getTableName);
+                if (create_flag == TABLE_CREATED) {
                     Toast.makeText(MainActivity.this, "Create Table", Toast.LENGTH_SHORT).show();
-                } else if (sqlCreateTable(getTableName) == 1) {
+                } else if (create_flag == TABLE_EXISTS) {
                     Toast.makeText(MainActivity.this, "Table Exists", Toast.LENGTH_SHORT).show();
                 }else {
                     Toast.makeText(MainActivity.this, "Fail to create table", Toast.LENGTH_SHORT).show();
@@ -1380,13 +1385,14 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         bt_sql_write.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                // String key = sql_key.getText().toString();
-                // String value = sql_value.getText().toString();
-                // String lum = sql_lum.getText().toString();
-                // String region = sql_region.getText().toString();
+                String key = sql_key.getText().toString();
+                String value = sql_value.getText().toString();
+                int lum = Integer.parseInt(sql_lum.getText().toString());
+                int region = Integer.parseInt(sql_region.getText().toString());
+                YarnDetectData yarnDetectData = new YarnDetectData(key,value,lum,region);
                 String getTableName = sql_table_name.getText().toString();
-                sqlInsertCameraParameter(getTableName);
-                Toast.makeText(MainActivity.this, "写入参数成功", Toast.LENGTH_SHORT).show();
+                long sqlInsertFlag = sqlInsertDetectResult(getTableName, yarnDetectData);
+                Log.d(QTG, "InsertFlag:"+ sqlInsertFlag);
             }
         });
 
@@ -1394,7 +1400,17 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         bt_sql_load.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                // 这里添加加载数据的处理代码
+            }
+        });
+        EditText et_fetch_key = findViewById(R.id.et_sql_findKey);
+        Button bt_sql_fetch = findViewById(R.id.bt_sql_fetch);
+        bt_sql_fetch.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String fetch_key = et_fetch_key.getText().toString();
+                String getTableName = sql_table_name.getText().toString();
+                YarnDetectData findDetectData = dbTool.fetchDataById(getTableName, fetch_key);
+                Log.d(QTG, "DetectData" + findDetectData.toString());
             }
         });
 

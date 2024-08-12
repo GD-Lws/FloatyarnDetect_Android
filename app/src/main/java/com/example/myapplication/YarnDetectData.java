@@ -1,5 +1,7 @@
 package com.example.myapplication;
 
+import android.content.ContentValues;
+
 public class YarnDetectData {
     private String key;
     private String value;
@@ -11,6 +13,14 @@ public class YarnDetectData {
         this.value = value;
         this.lum = lum;
         this.region = region;
+    }
+    public ContentValues getContentValues(){
+        ContentValues values = new ContentValues();
+        values.put("KEY", this.key);
+        values.put("VALUE", this.value);
+        values.put("LUM", this.lum);
+        values.put("REGION", this.region);
+        return values;
     }
 
     public String getKey() { return key; }

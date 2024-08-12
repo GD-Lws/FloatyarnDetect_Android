@@ -18,6 +18,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -42,14 +43,11 @@ public class SQLiteTool extends SQLiteOpenHelper {
         Log.d(TAG, "数据库升级：从版本 " + oldVersion + " 升级到 " + newVersion);
     }
 
-    public YarnDetectData fetchDataById(String tableName, int id) {
+    public YarnDetectData fetchDataById(String tableName, String key) {
         // 定义查询参数
         String[] columns = {"KEY", "VALUE", "LUM", "REGION"}; // 要查询的列
         String selection = "KEY = ?"; // WHERE子句
-        String[] selectionArgs = {String.valueOf(id)}; // WHERE子句中的参数
-        String groupBy = null; // GROUP BY子句
-        String having = null; // HAVING子句
-        String orderBy = null; // ORDER BY子句
+        String[] selectionArgs = {String.valueOf(key)}; // WHERE子句中的参数
         SQLiteDatabase db = getReadableDatabase();
         Cursor cursor = null;
 
@@ -77,7 +75,7 @@ public class SQLiteTool extends SQLiteOpenHelper {
                 Log.d(TAG, "Key: " + rowKey + ", Value: " + value + ", Lum: " + lum + ", Region: " + region);
                 return yarnDetectData;
             } else {
-                Log.d(TAG, "No data found for ID: " + id);
+                Log.d(TAG, "No data found for KEY: " + key);
                 return null;
             }
         } catch (Exception e) {
@@ -122,25 +120,29 @@ public class SQLiteTool extends SQLiteOpenHelper {
      * 创建一个新表。
      *
      * @param tableName 表名
-     * @param columns   列定义，例如 "id INTEGER PRIMARY KEY, name TEXT"
      */
-    public boolean createTable(String tableName, String columns) {
-        if (tableName.length() == 0){
+    public boolean createTable(String tableName) {
+        if (tableName == null || tableName.trim().isEmpty()) {
+            Log.e(TAG, "Invalid table name");
             return false;
         }
+
         SQLiteDatabase db = null;
         try {
             db = this.getWritableDatabase();
-            String createTableSQL = "CREATE TABLE IF NOT EXISTS " + tableName + " (" + columns + ");";
+
+            String createTableSQL = "CREATE TABLE IF NOT EXISTS " + tableName + " (" +
+                    "KEY TEXT PRIMARY KEY, VALUE TEXT, LUM INTEGER, REGION INTEGER" + ");";
+
             db.execSQL(createTableSQL);
             return true;
         } catch (SQLException e) {
             Log.e(TAG, "创建表时出错：" + e.getMessage());
+            return false;
         } finally {
             if (db != null && db.isOpen()) {
                 db.close();
             }
-            return false;
         }
     }
 
@@ -166,7 +168,6 @@ public class SQLiteTool extends SQLiteOpenHelper {
         }
         return result;
     }
-
 
 
     public boolean isTableExists(String tableName) {
@@ -375,7 +376,6 @@ public class SQLiteTool extends SQLiteOpenHelper {
     }
 
 
-
     /**
      * 设置事务成功。
      */
@@ -400,32 +400,6 @@ public class SQLiteTool extends SQLiteOpenHelper {
         } catch (SQLException e) {
             Log.e(TAG, "结束事务时出错：" + e.getMessage());
         }
-    }
-    /**
-     * 检查表是否存在。
-     *
-     * @param tableName 表名
-     * @return 如果表存在返回true，否则返回false
-     */
-    public boolean tableExists(String tableName) {
-        SQLiteDatabase db = null;
-        Cursor cursor = null;
-        boolean exists = false;
-        try {
-            db = this.getReadableDatabase();
-            cursor = db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name=?", new String[]{tableName});
-            exists = (cursor.getCount() > 0);
-        } catch (SQLException e) {
-            Log.e(TAG, "检查表是否存在时出错：" + e.getMessage());
-        } finally {
-            if (cursor != null && !cursor.isClosed()) {
-                cursor.close();
-            }
-            if (db != null && db.isOpen()) {
-                db.close();
-            }
-        }
-        return exists;
     }
 
     /**
@@ -552,6 +526,33 @@ public class SQLiteTool extends SQLiteOpenHelper {
                 db.close();
             }
         }
+    }
+
+    public List<String> getAllTables() {
+        List<String> tableList = new ArrayList<>();
+        SQLiteDatabase db = null;
+        Cursor cursor = null;
+        try {
+            db = this.getReadableDatabase();
+            String query = "SELECT name FROM sqlite_master WHERE type='table'";
+            cursor = db.rawQuery(query, null);
+            if (cursor != null && cursor.moveToFirst()) {
+                do {
+                    String tableName = cursor.getString(0); // 获取表名
+                    tableList.add(tableName);
+                } while (cursor.moveToNext());
+            }
+        } catch (SQLException e) {
+            Log.e(TAG, "获取所有表时出错：" + e.getMessage());
+        } finally {
+            if (cursor != null && !cursor.isClosed()) {
+                cursor.close();
+            }
+            if (db != null && db.isOpen()) {
+                db.close();
+            }
+        }
+        return tableList;
     }
 
     /**

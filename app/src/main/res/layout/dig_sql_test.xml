@@ -59,6 +59,7 @@
         android:layout_height="wrap_content"
         android:text="LUM:"
         android:textSize="20dp"
+        android:inputType="number"
         />
     <EditText
         android:id="@+id/et_sql_lum"
@@ -66,6 +67,7 @@
         android:layout_height="wrap_content"
         android:hint="0.2~10.0"
         android:textSize="20dp"
+        android:inputType="number"
         />
 
     <TextView
@@ -111,13 +113,13 @@
         android:layout_height="wrap_content"
         android:text="find_Key"
         android:textSize="30dp"
-        android:id="@+id/ed_sql_findKey"
+        android:id="@+id/et_sql_findKey"
         />
     <Button
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Find"
         android:textSize="30dp"
-        android:id="@+id/bt_sql_find"
+        android:id="@+id/bt_sql_fetch"
         />
 </LinearLayout>
