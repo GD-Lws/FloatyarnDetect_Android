@@ -296,6 +296,38 @@ public class SQLiteTool extends SQLiteOpenHelper {
         }
     }
 
+        public void dropAllTables() {
+            SQLiteDatabase db = null;
+            Cursor cursor = null;
+            try {
+                db = this.getWritableDatabase();
+
+                // 查询数据库中所有表的名称
+                String query = "SELECT name FROM sqlite_master WHERE type='table'";
+                cursor = db.rawQuery(query, null);
+
+                if (cursor.moveToFirst()) {
+                    do {
+                        String tableName = cursor.getString(0);
+                        if (!tableName.equals("android_metadata") && !tableName.equals("sqlite_sequence")) {
+                            String dropTableSQL = "DROP TABLE IF EXISTS " + tableName + ";";
+                            db.execSQL(dropTableSQL);
+                        }
+                    } while (cursor.moveToNext());
+                }
+            } catch (SQLException e) {
+                Log.e(TAG, "清空所有表时出错：" + e.getMessage());
+            } finally {
+                if (cursor != null) {
+                    cursor.close();
+                }
+                if (db != null && db.isOpen()) {
+                    db.close();
+                }
+            }
+        }
+
+
     /**
      * 查询表中的数据。
      *

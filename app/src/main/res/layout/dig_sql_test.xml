@@ -84,6 +84,13 @@
         android:hint="1.0~10.0"
         android:textSize="20dp"
         />
+    <EditText
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="30dp"
+        android:text="camera_Iso"
+        android:id="@+id/et_sql_findKey"
+        />
     <Button
         android:id="@+id/bt_sql_setTableName"
         android:layout_width="match_parent"
@@ -108,18 +115,10 @@
         android:text="SQL_Refresh"
         android:id="@+id/bt_sql_refresh"
         />
-    <EditText
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="find_Key"
-        android:textSize="30dp"
-        android:id="@+id/et_sql_findKey"
-        />
     <Button
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Find"
-        android:textSize="30dp"
+        android:text="fetch"
         android:id="@+id/bt_sql_fetch"
         />
 </LinearLayout>
