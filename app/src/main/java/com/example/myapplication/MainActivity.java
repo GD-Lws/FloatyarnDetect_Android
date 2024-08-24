@@ -233,7 +233,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     byte[] byteArrTDRA = {0x54, 0x44, 0x52, 0x41, 0x0d, 0x0a, 0x00, 0x00};
 
     byte[] byteArrGETPAR = {0x47, 0x45, 0x54, 0x50, 0x41, 0x52, 0x0d, 0x0a};
-    byte[] byteArrRES = {0x52, 0x45, 0x53, 0x3A, 0x31, 0x0d, 0x0a, 0x00};
+    byte[] byteArrRES = {0x4B, 0x48, 0x48, 0x48, 0x48, 0x48, 0x3A, 0x31};
 
 
     //  心跳线程
@@ -463,11 +463,14 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 if (flagDetect){
                     byte[] detectArr = byteArrRES;
                     Mat detectMat = new Mat();
+                    if (detectMode == operateMode.Compare){
+                        YarnDetectData yarnDetectData = dbTool.fetchDataById(knitTableName, String.valueOf(knitRow));
 
+                    }
                     if(detectYarnInImage(grayscaleMat.getNativeObjAddr(), detectMat.getNativeObjAddr(), arrRoi1, arrRoi2, arrDetectPar,saveFilePath, knitRow)){
-                        detectArr[4] = 0x48;
+                        detectArr[7] = 0x48;
                     }else {
-                        detectArr[4] = 0x49;
+                        detectArr[7] = 0x49;
                     }
                     serByteSend(detectArr);
                 }
