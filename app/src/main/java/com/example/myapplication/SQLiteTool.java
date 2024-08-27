@@ -60,16 +60,18 @@ public class SQLiteTool extends SQLiteOpenHelper {
                 // 获取列索引
                 int keyIndex = cursor.getColumnIndex("KEY");
                 int valueIndex = cursor.getColumnIndex("VALUE");
+                int velocityIndex = cursor.getColumnIndex("VELOCITY");
                 int lumIndex = cursor.getColumnIndex("LUM");
                 int regionIndex = cursor.getColumnIndex("REGION");
 
                 // 获取列值
                 String rowKey = cursor.getString(keyIndex);
                 String value = cursor.getString(valueIndex);
+                float velocity = cursor.getFloat(velocityIndex);
                 int lum = cursor.getInt(lumIndex);
                 int region = cursor.getInt(regionIndex);
 
-                YarnDetectData yarnDetectData = new YarnDetectData(rowKey, value, lum, region);
+                YarnDetectData yarnDetectData = new YarnDetectData(rowKey, value, velocity, lum, region);
 
                 // 处理数据（例如，打印到日志）
                 Log.d(TAG, "Key: " + rowKey + ", Value: " + value + ", Lum: " + lum + ", Region: " + region);
@@ -132,7 +134,12 @@ public class SQLiteTool extends SQLiteOpenHelper {
             db = this.getWritableDatabase();
 
             String createTableSQL = "CREATE TABLE IF NOT EXISTS " + tableName + " (" +
-                    "KEY TEXT PRIMARY KEY, VALUE TEXT, LUM INTEGER, REGION INTEGER" + ");";
+                    "KEY TEXT PRIMARY KEY, " +
+                    "VALUE TEXT, " +
+                    "VELOCITY REAL, " +
+                    "LUM INTEGER, " +
+                    "REGION INTEGER" +
+                    ");";
 
             db.execSQL(createTableSQL);
             return true;
@@ -243,10 +250,11 @@ public class SQLiteTool extends SQLiteOpenHelper {
     }
 
 
-    ContentValues createContentValues(String key, String value, int lum, int region) {
+    ContentValues createContentValues(String key, String value,float velocity, int lum, int region) {
         ContentValues values = new ContentValues();
         values.put("KEY", key);
         values.put("VALUE", value);
+        values.put("VELOCITY", velocity);
         values.put("LUM", lum);
         values.put("REGION", region);
         return values;

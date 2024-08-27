@@ -12,6 +12,7 @@ void myFlip(Mat& src);
 void myBlur(Mat& src, float sigma);
 void myRoi(Mat& src, Mat& roi1, Mat& roi2, int* roi1Array, int* roi2Array);
 Mat myRectangle(Mat& src, int* roi1, int* roi2);
+struct DetectionResult;
 bool myDetect(Mat& roi_img, Mat& result_img,double thresh, double thresh_maxval, double height_percent);
 double calTemplateValue(Mat& targetImage, Mat& templateImage);
 #endif //MY_APPLICATION_OPENCV_UTILS_H

@@ -65,45 +65,178 @@ void myRoi(Mat& src, Mat& roi1, Mat& roi2, int* roi1Array, int* roi2Array) {
     roi2 = src(roi2Rect).clone(); // 从原始图像中克隆 ROI2 区域
 }
 
+struct DetectionResult {
+    int position;          // 物体位置：0 - 左，1 - 中，2 - 右，-1 - 未检测到
+    double width;          // 物体宽度
+    double areaRatio;      // 所占比例
+};
 
-bool myDetect(Mat& roi_img, Mat& result_img, double thresh, double thresh_maxval, double height_percent) {
-    bool detect_flag = false;
+DetectionResult myDetect(Mat& roiImage, Mat& outputImage, double thresholdValue, double maxThresholdValue, double heightRatio) {
+    DetectionResult result;
+    result.position = -1; // 初始化为-1，表示没有检测到物体
+    result.width = 0.0;
+    result.areaRatio = 0.0;
 
     // 将 ROI 图像转换为灰度图像
     cv::Mat grayImage;
-    cv::cvtColor(roi_img, grayImage, cv::COLOR_RGBA2GRAY);
+    cv::cvtColor(roiImage, grayImage, cv::COLOR_RGBA2GRAY);
 
     // 对灰度图像进行阈值处理
-    cv::Mat binary;
-    cv::threshold(grayImage, binary, thresh, thresh_maxval, cv::THRESH_BINARY);
+    cv::Mat binaryImage;
+    cv::threshold(grayImage, binaryImage, thresholdValue, maxThresholdValue, cv::THRESH_BINARY);
 
     // 查找轮廓
     std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(binary, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    cv::findContours(binaryImage, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
     // 获取阈值高度
-    int threshold_height = static_cast<int>(roi_img.rows * height_percent);
+    int heightThreshold = static_cast<int>(roiImage.rows * heightRatio);
 
-    // 在输出图像上绘制轮廓
-    result_img = roi_img.clone(); // 克隆输入图像作为输出图像
+    // 初始化变量
+    double totalArea = 0.0;
+    int imageWidth = roiImage.cols;
+    int leftThird = imageWidth / 3;
+    int rightThird = 2 * leftThird;
+
+    // 克隆输入图像作为输出图像
+    outputImage = roiImage.clone();
+
     for (const auto& contour : contours) {
-        cv::Rect bounding_rect = cv::boundingRect(contour);
-        if (bounding_rect.width < threshold_height) {
-            cv::drawContours(result_img, std::vector<std::vector<cv::Point>>{contour}, -1,
-                             cv::Scalar(0, 255, 255), -1);  // 填充绿色
+        cv::Rect boundingBox = cv::boundingRect(contour);
+        double contourArea = boundingBox.area();
+        totalArea += contourArea;
+
+        if (boundingBox.width < heightThreshold) {
+            cv::drawContours(outputImage, std::vector<std::vector<cv::Point>>{contour}, -1, cv::Scalar(0, 255, 255), -1);  // 填充绿色
         } else {
-            cv::drawContours(result_img, std::vector<std::vector<cv::Point>>{contour}, -1,
-                             cv::Scalar(255, 0, 150), -1);  // 填充红色
-            cv::rectangle(result_img, bounding_rect, cv::Scalar(0, 0, 255), 2);  // 画红色矩形框
-//            cv::Mat det_range = roi_img(bounding_rect);
-//            detected_rois.push_back(det_range.clone()); // 添加ROI的克隆，以确保独立性
-            detect_flag = true;
+            cv::drawContours(outputImage, std::vector<std::vector<cv::Point>>{contour}, -1, cv::Scalar(255, 0, 150), -1);  // 填充红色
+            cv::rectangle(outputImage, boundingBox, cv::Scalar(0, 0, 255), 2);  // 画红色矩形框
+            result.position = 0;  // 表示检测到了物体
+            result.width = boundingBox.width; // 保存物体宽度
+        }
+
+        // 计算物体位置
+        int contourCenterX = boundingBox.x + boundingBox.width / 2;
+        if (contourCenterX < leftThird) {
+            result.position = 0; // 左边
+        } else if (contourCenterX >= rightThird) {
+            result.position = 2; // 右边
+        } else {
+            result.position = 1; // 中间
         }
     }
-    return detect_flag;
+
+    // 计算所占比例
+    result.areaRatio = totalArea / (roiImage.rows * roiImage.cols);
+
+    return result;
 }
 
 
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_example_myapplication_MainActivity_detectYarnInImage(JNIEnv* env, jobject p_this, jlong matIn, jlong matOut,
+                                                              jintArray roi1, jintArray roi2, jfloatArray detectPar,
+                                                              jstring saveFilePath, jint yarnRow) {
+    cv::Mat& matRaw = *(cv::Mat*) matIn;
+    cv::Mat& matAfter = *(cv::Mat*) matOut;
+
+    // 获取保存路径字符串
+    const char* filePath = env->GetStringUTFChars(saveFilePath, nullptr);
+    if (filePath == nullptr) {
+        return nullptr; // 获取路径失败，返回 null
+    }
+
+    // 获取 C++ 整数数组来存储 ROI 值
+    jint* roi1Array = env->GetIntArrayElements(roi1, nullptr);
+    jint* roi2Array = env->GetIntArrayElements(roi2, nullptr);
+    jfloat* detectArray = env->GetFloatArrayElements(detectPar, nullptr);
+
+    // 复制原始图像到输出图像
+    matRaw.copyTo(matAfter);
+
+    // 使用提取的值初始化 ROI 区域
+    cv::Mat matroi1, matroi2;
+    try {
+        myRoi(matRaw, matroi1, matroi2, roi1Array, roi2Array);
+    } catch (const std::exception& e) {
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "Error in myRoi: %s", e.what());
+        env->ReleaseIntArrayElements(roi1, roi1Array, JNI_ABORT);
+        env->ReleaseIntArrayElements(roi2, roi2Array, JNI_ABORT);
+        env->ReleaseFloatArrayElements(detectPar, detectArray, JNI_ABORT);
+        env->ReleaseStringUTFChars(saveFilePath, filePath);
+        return nullptr;
+    }
+
+    // 检测 ROI 区域中的纱线
+    DetectionResult detectResult1 = myDetect(matroi1, matAfter, detectArray[0], detectArray[1], detectArray[2]);
+    DetectionResult detectResult2 = myDetect(matroi2, matAfter, detectArray[0], detectArray[1], detectArray[2]);
+
+    // 将检测结果复制到输出图像中的相应 ROI 区域
+    try {
+        // 检查并拷贝检测结果
+        if (detectResult1.position != -1) {
+            matAfter(cv::Rect(roi1Array[0], roi1Array[1], roi1Array[2] - roi1Array[0], roi1Array[3] - roi1Array[1])) = matroi1;
+        }
+        if (detectResult2.position != -1) {
+            matAfter(cv::Rect(roi2Array[0], roi2Array[1], roi2Array[2] - roi2Array[0], roi2Array[3] - roi2Array[1])) = matroi2;
+        }
+    } catch (const cv::Exception& e) {
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "Error in copying result to matAfter: %s", e.what());
+        env->ReleaseIntArrayElements(roi1, roi1Array, JNI_ABORT);
+        env->ReleaseIntArrayElements(roi2, roi2Array, JNI_ABORT);
+        env->ReleaseFloatArrayElements(detectPar, detectArray, JNI_ABORT);
+        env->ReleaseStringUTFChars(saveFilePath, filePath);
+        return nullptr;
+    }
+
+    // 创建 Java YarnDetectData 对象
+    jclass yarnDetectDataClass = env->FindClass("com/example/myapplication/YarnDetectData");
+    jmethodID yarnDetectDataConstructor = env->GetMethodID(yarnDetectDataClass, "<init>", "()V");
+    jobject yarnDetectDataObj = env->NewObject(yarnDetectDataClass, yarnDetectDataConstructor);
+
+    // 设置 YarnDetectData 对象的属性
+    jfieldID keyField = env->GetFieldID(yarnDetectDataClass, "key", "Ljava/lang/String;");
+    jfieldID valueField = env->GetFieldID(yarnDetectDataClass, "value", "Ljava/lang/String;");
+    jfieldID velocityField = env->GetFieldID(yarnDetectDataClass, "veloctiy", "F");
+    jfieldID lumField = env->GetFieldID(yarnDetectDataClass, "lum", "I");
+    jfieldID regionField = env->GetFieldID(yarnDetectDataClass, "region", "I");
+
+    env->SetObjectField(yarnDetectDataObj, keyField, env->NewStringUTF("0"));
+    env->SetObjectField(yarnDetectDataObj, valueField, env->NewStringUTF(std::to_string(detectResult1.position).c_str()));
+    env->SetFloatField(yarnDetectDataObj, velocityField, 0.0f);
+    env->SetIntField(yarnDetectDataObj, lumField, detectResult1.width); // 使用宽度
+    env->SetIntField(yarnDetectDataObj, regionField, static_cast<int>(detectResult1.areaRatio * 100)); // 比例转为百分比
+
+    // 保存图像到指定路径（如有需要）
+    if (strcmp(filePath, "N") != 0) {
+        std::string basePath(filePath);
+        std::string savePath1 = basePath + "/roi1/matresult1_" + std::to_string(yarnRow) + ".bmp";
+        std::string savePath2 = basePath + "/roi2/matresult2_" + std::to_string(yarnRow) + ".bmp";
+        imwrite(savePath1, matroi1);
+        imwrite(savePath2, matroi2);
+
+        if (detectResult1.position != -1) {
+            std::string savePath3 = basePath + "/det/matresult1_" + std::to_string(yarnRow) + ".bmp";
+            imwrite(savePath3, matroi1);
+        }
+        if (detectResult2.position != -1) {
+            std::string savePath4 = basePath + "/det/matresult2_" + std::to_string(yarnRow) + ".bmp";
+            imwrite(savePath4, matroi2);
+        }
+
+        __android_log_print(ANDROID_LOG_INFO, TAG, "matresult1 save path: %s", savePath1.c_str());
+        __android_log_print(ANDROID_LOG_INFO, TAG, "matresult2 save path: %s", savePath2.c_str());
+    }
+
+    // 释放资源
+    env->ReleaseIntArrayElements(roi1, roi1Array, JNI_ABORT);
+    env->ReleaseIntArrayElements(roi2, roi2Array, JNI_ABORT);
+    env->ReleaseFloatArrayElements(detectPar, detectArray, JNI_ABORT);
+    env->ReleaseStringUTFChars(saveFilePath, filePath);
+
+    // 返回检测数据对象
+    return yarnDetectDataObj;
+}
 
 
 double calTemplateValue(Mat& targetImage, Mat& templateImage){

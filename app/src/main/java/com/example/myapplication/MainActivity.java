@@ -1441,17 +1441,17 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     }
 
     private void sqlInsertCameraParameter(String tableName){
-            List<ContentValues> valuesList = new ArrayList<>();
-            valuesList.add(dbTool.createContentValues("camera_Iso", String.valueOf(camera_Iso), 0, 0));
-            valuesList.add(dbTool.createContentValues("camera_focusDistance", String.valueOf(camera_focusDistance), 0, 0));
-            valuesList.add(dbTool.createContentValues("camera_zoomRatio", String.valueOf(camera_zoomRatio), 0, 0));
-            valuesList.add(dbTool.createContentValues("camera_exposureTime", String.valueOf(camera_exposureTime), 0, 0));
+        List<ContentValues> valuesList = new ArrayList<>();
+        valuesList.add(dbTool.createContentValues("camera_Iso", String.valueOf(camera_Iso), 0.0f, 0, 0));
+        valuesList.add(dbTool.createContentValues("camera_focusDistance", String.valueOf(camera_focusDistance),0.0f, 0, 0));
+        valuesList.add(dbTool.createContentValues("camera_zoomRatio", String.valueOf(camera_zoomRatio),0.0f, 0, 0));
+        valuesList.add(dbTool.createContentValues("camera_exposureTime", String.valueOf(camera_exposureTime),0.0f, 0, 0));
 
-            valuesList.add(dbTool.createContentValues("arrRoi1", String.valueOf(arrayToSting(arrRoi1)), 0, 0));
-            valuesList.add(dbTool.createContentValues("arrRoi2", String.valueOf(arrayToSting(arrRoi2)), 0, 0));
-            // 批量插入数据
-            dbTool.batchInsertData(tableName, valuesList);
-        }
+        valuesList.add(dbTool.createContentValues("arrRoi1", String.valueOf(arrayToSting(arrRoi1)),0.0f, 0, 0));
+        valuesList.add(dbTool.createContentValues("arrRoi2", String.valueOf(arrayToSting(arrRoi2)),0.0f, 0, 0));
+        // 批量插入数据
+        dbTool.batchInsertData(tableName, valuesList);
+    }
 
         private void sqlUpdateCameraParameter(String tableName){
             sqlUpdateParameter(tableName, "camera_Iso",camera_Iso);
@@ -1562,7 +1562,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 String value = sql_value.getText().toString();
                 int lum = Integer.parseInt(sql_lum.getText().toString());
                 int region = Integer.parseInt(sql_region.getText().toString());
-                YarnDetectData yarnDetectData = new YarnDetectData(key,value,lum,region);
+                YarnDetectData yarnDetectData = new YarnDetectData(key,value,0.0f,lum,region);
                 String getTableName = sql_table_name.getText().toString();
                 long sqlInsertFlag = sqlInsertDetectResult(getTableName, yarnDetectData);
                 Log.d(QTG, "InsertFlag:"+ sqlInsertFlag);
