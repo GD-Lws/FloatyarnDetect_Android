@@ -85,8 +85,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     static {
         System.loadLibrary("myapplication");
     }
-    public native boolean detectYarnInImage(long inMat, long outMat, int[] roi1, int[] roi2, float[] det_par, String saveFilePath, int yarnRow);
-    private native void matDrawRoiRange(long matIn, long matOut, int[] roi1, int[] roi2);
+    public native YarnDetectData detectYarnInImage(long matIn, long matOut, int[] roi, float[] detectPar, String saveFilePath);
     private native void bitmapDrawRoiRange(Bitmap bitmapIn, Bitmap bitmapOut, int[] roi1, int[] roi2);
 
     /***************   Serial Value   *************************************/
@@ -127,14 +126,13 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     private ArrayAdapter<SerListItem> listAdapter;
     private UsbManager usbManager = null;
     private UsbSerialPort usbSerialPort = null;
-    private ListView lv_device;
     private static final String INTENT_ACTION_GRANT_USB = BuildConfig.APPLICATION_ID + ".GRANT_USB";
-    private Button bt_ser_detect, bt_ser_connect, bt_ser_disconnect, bt_ser_refresh, bt_ser_send, bt_ser_sqlite, bt_ser_params, bt_ser_ready;
+    private Button bt_ser_sqlite;
+    private Button bt_ser_params;
     private Spinner sp_baudRate, sp_mode;
     private TextView tv_ser_rec, tv_ser_state, tv_camera_state;
     private static boolean flag_serConnect = false;
     private static final int WRITE_WAIT_MILLIS = 2000;
-    private int baudRate = 460800;
     private int linesPerChunks = 30;
     private static final int CHUNK_SIZE = 16384; // 定义每个包的大小
 
@@ -165,7 +163,8 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     private boolean flagGetImage = false;
     private boolean flagCameraOpen = false;
     private Button bt_ser_camera, bt_ser_roi;
-    private List<String> holdTableName;
+//  用于获取数据库存有的表名
+    private List<String> sendTableNameList;
 
     //  检测参数
     private int[] arrRoi1 = new int[]{512, 200, 722, 380};
@@ -173,7 +172,8 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     private int cameraViewWidth = 1920;
     private int cameraViewHeight = 1080;
     private float[] arrDetectPar = new float[]{40.0f, 255.0f, 0.4f};
-    private int knitRow = 0;
+    private int recKnitRow = 0;
+    private float recKnitVelocity = 0.0f;
     /************************************************************************/
 
     // 工具类
@@ -292,7 +292,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 return view;
             }
         };
-        lv_device = findViewById(R.id.lv_Ser_derive);
+        ListView lv_device = findViewById(R.id.lv_Ser_derive);
         lv_device.setAdapter(listAdapter);
         lv_device.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
@@ -305,12 +305,12 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 }
             }
         });
-        bt_ser_refresh = findViewById(R.id.bt_Ser_refresh);
-        bt_ser_detect = findViewById(R.id.bt_Ser_detect);
-        bt_ser_ready = findViewById(R.id.bt_Ser_Ready);
-        bt_ser_connect = findViewById(R.id.bt_Ser_open);
-        bt_ser_disconnect = findViewById(R.id.bt_Ser_close);
-        bt_ser_send = findViewById(R.id.bt_Ser_send);
+        Button bt_ser_refresh = findViewById(R.id.bt_Ser_refresh);
+        Button bt_ser_detect = findViewById(R.id.bt_Ser_detect);
+        Button bt_ser_ready = findViewById(R.id.bt_Ser_Ready);
+        Button bt_ser_connect = findViewById(R.id.bt_Ser_open);
+        Button bt_ser_disconnect = findViewById(R.id.bt_Ser_close);
+        Button bt_ser_send = findViewById(R.id.bt_Ser_send);
         bt_ser_camera = findViewById(R.id.bt_Ser_camera);
         bt_ser_roi = findViewById(R.id.bt_Ser_roi);
         bt_sql_info = findViewById(R.id.bt_Ser_sql);
@@ -462,13 +462,35 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 }
                 if (flagDetect){
                     byte[] detectArr = byteArrRES;
-                    Mat detectMat = new Mat();
+                    Mat detectMat_1 = new Mat();
+                    Mat detectMat_2 = new Mat();
+                    YarnDetectData DY1 = detectYarnInImage(grayscaleMat.getNativeObjAddr(), detectMat_1.getNativeObjAddr(), arrRoi1, arrDetectPar, saveFilePath+"\\roi_1");
+                    YarnDetectData DY2 = detectYarnInImage(grayscaleMat.getNativeObjAddr(), detectMat_2.getNativeObjAddr(), arrRoi2, arrDetectPar, saveFilePath+"\\roi_2");
+                    switch (detectMode){
+                        case Detect:{
+                            if (DY1.getValue() == "0" && DY2.getValue() == "0" ){
+                                detectArr[4] = 0x48;
+                            }else {
+                                detectArr[4] = 0x49;
+                            }
+                        }break;
+                        //  参数保存
+                        case Record:{
+                            DY1.setVelocityAndRow(recKnitRow +"_1", recKnitVelocity);
+                            DY2.setVelocityAndRow(recKnitRow +"_2", recKnitVelocity);
+                            YarnDetectData[] dyArr = {DY1, DY2};
+                            sqlInsertYarnData(dyArr);
+                            if (DY1.getValue() == "0" && DY2.getValue() == "0" ){
+                                detectArr[4] = 0x48;
+                            }else {
+                                detectArr[4] = 0x49;
+                            }
+                        }break;
+                        case Compare:{
 
-                    if(detectYarnInImage(grayscaleMat.getNativeObjAddr(), detectMat.getNativeObjAddr(), arrRoi1, arrRoi2, arrDetectPar,saveFilePath, knitRow)){
-                        detectArr[4] = 0x48;
-                    }else {
-                        detectArr[4] = 0x49;
+                        }break;
                     }
+
                     serByteSend(detectArr);
                 }
                 runOnUiThread(new Runnable() {
@@ -823,6 +845,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     try {
                         usbSerialPort.open(usbConnection);
                         try {
+                            int baudRate = 460800;
                             usbSerialPort.setParameters(baudRate, 8, 1, UsbSerialPort.PARITY_NONE);
                         } catch (UnsupportedOperationException e) {
                         }
@@ -1341,8 +1364,8 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 serByteSend(byteArrBA2RE);
             } else if (checkByteArray(inputBytes, byteArrYARN, 3)) {
                 byte[] arrYarnRow = Arrays.copyOfRange(inputBytes, 3, 8);
-                knitRow = Integer.parseInt(myUtil.convertHexBytesToString(arrYarnRow));
-                serStatusDisplay("KnitRow:" + knitRow);
+                recKnitRow = Integer.parseInt(myUtil.convertHexBytesToString(arrYarnRow));
+                serStatusDisplay("KnitRow:" + recKnitRow);
             } else {
                 Log.e(SAG, "Error RecMsg-Active:" + Arrays.toString(inputBytes));
             }
@@ -1453,6 +1476,14 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         dbTool.batchInsertData(tableName, valuesList);
     }
 
+    private void sqlInsertYarnData(YarnDetectData[] detectData){
+        List<ContentValues> valuesList = new ArrayList<>();
+        for (int i = 0; i < detectData.length; i++) {
+            valuesList.add(dbTool.createContentValues(detectData[i].getKey(), detectData[i].getValue(), detectData[i].getVelocity(), detectData[i].getLum(), detectData[i].getRegion()));
+        }
+        // 批量插入数据
+        dbTool.batchInsertData(knitTableName, valuesList);
+    }
         private void sqlUpdateCameraParameter(String tableName){
             sqlUpdateParameter(tableName, "camera_Iso",camera_Iso);
             sqlUpdateParameter(tableName, "camera_focusDistance",camera_focusDistance);
@@ -1492,7 +1523,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
 
     private void sqlGetTableNameArray(boolean serSend){
         List<String> tablesList = dbTool.getAllTables();
-        holdTableName = tablesList;
+        sendTableNameList = tablesList;
         int index = 0;
         // 排除原生表android
         int listSize = tablesList.size() - 1;
