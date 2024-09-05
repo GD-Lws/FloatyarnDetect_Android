@@ -62,12 +62,12 @@ void myDetect(cv::Mat& roiImage, cv::Mat& outputImage, double thresholdValue, do
     result->areaRatio = 0;
 
     // 将 ROI 图像转换为灰度图像
-    cv::Mat grayImage;
-    cv::cvtColor(roiImage, grayImage, cv::COLOR_RGBA2GRAY);
+//    cv::Mat grayImage;
+//    cv::cvtColor(roiImage, grayImage, cv::COLOR_RGBA2GRAY);
 
     // 对灰度图像进行阈值处理
     cv::Mat binaryImage;
-    cv::threshold(grayImage, binaryImage, thresholdValue, threshMaxVal, cv::THRESH_BINARY);
+    cv::threshold(roiImage, binaryImage, thresholdValue, threshMaxVal, cv::THRESH_BINARY);
 
     // 查找轮廓
     std::vector<std::vector<cv::Point>> contours;

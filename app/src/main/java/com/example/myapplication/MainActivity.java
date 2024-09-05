@@ -36,9 +36,11 @@ import android.os.Bundle;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.PowerManager;
 import android.util.Log;
 import android.util.Range;
 import android.view.Gravity;
@@ -46,6 +48,7 @@ import android.view.LayoutInflater;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -85,6 +88,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     static {
         System.loadLibrary("myapplication");
     }
+    public native void matMerge(long matTarget, long matOut, long[] matInArray, int[] roiArray);
     public native YarnDetectData detectYarnInImage(long matIn, long matOut, int[] roi, float[] detectPar, String saveFilePath);
     private native void bitmapDrawRoiRange(Bitmap bitmapIn, Bitmap bitmapOut, int[] roi1, int[] roi2);
 
@@ -178,9 +182,8 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
 
     // 工具类
     private UtilTool myUtil;
-    private static final String FAG = "FileDebug";
-    private static final String CAG = "CameraDebug";
-    private static final String SAG = "SerialDebug";
+    // DriverDebug
+    private static final String TAG = "ToolDebug";
     private static final String DAG = "DetectDebug";
     private static final String STG = "StateDebug";
     private static final String QTG = "SQLDebug";
@@ -231,9 +234,10 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     // 换表
     byte[] byteArrTCHA = {0x54, 0x43, 0x48, 0x41, 0x3A, 0x31, 0x00, 0x00};
     byte[] byteArrTDRA = {0x54, 0x44, 0x52, 0x41, 0x0d, 0x0a, 0x00, 0x00};
+    byte[] byteArrQUERY = {0x54, 0x51, 0x55, 0x45, 0x52, 0x59, 0x0d, 0x0a};
 
     byte[] byteArrGETPAR = {0x47, 0x45, 0x54, 0x50, 0x41, 0x52, 0x0d, 0x0a};
-    byte[] byteArrRES = {0x52, 0x45, 0x53, 0x3A, 0x31, 0x0d, 0x0a, 0x00};
+    byte[] byteArrRES = {0x4B, 0x45, 0x53, 0x3A, 0x31, 0x0d, 0x0a, 0x00};
 
 
     //  心跳线程
@@ -247,14 +251,23 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     private String knitTableName = "";
     private final String CREATETABLE = "";
     /************************************************************************/
+    private  PowerManager.WakeLock wakeLock;
+    private SoundStateMachine soundStateMachine;
+
     @SuppressLint("MissingInflatedId")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        wakeLock = powerManager.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "MyApp::CameraWakeLock");
         setContentView(R.layout.activity_main);
         myUtil = new UtilTool();
         dbTool = new SQLiteTool(this);
-
+        soundStateMachine = new SoundStateMachine(this);
+        Intent serviceIntent = new Intent(this, MyForegroundService.class);
+        ContextCompat.startForegroundService(this, serviceIntent);
         saveFilePath = getExternalCacheDir().getAbsolutePath() + "/";
         OpenCVLoader.initDebug(false);
         if (myUtil.checkPermissions(MainActivity.this)) {
@@ -387,15 +400,35 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     @Override
     public void onResume() {
         super.onResume();
+        if (wakeLock != null) {
+            wakeLock.acquire();
+        }
         serRefresh();
     }
 
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // 释放 WakeLock
+        if (wakeLock != null && wakeLock.isHeld()) {
+            wakeLock.release();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (wakeLock != null && wakeLock.isHeld()) {
+            wakeLock.release();
+        }
+    }
+
+    //  通过串口开启相机
     private void serOpenCamera() {
         if (flagCameraOpen) {
-            Log.e(CAG, "摄像头已开启");
+            Log.e(TAG, "摄像头已开启");
             return;
         }
-        Log.d(CAG, "相机开启");
         startBackgroundThread();
         mImageReader = ImageReader.newInstance(cameraViewWidth, cameraViewHeight, ImageFormat.YUV_420_888, 52);
         mImageReader.setOnImageAvailableListener(mOnImageAvailableListener, mImageHandler);
@@ -450,7 +483,9 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 if (flagGetImage) {
                     byte[] jpgByteArray = myUtil.saveBitmapAsJpg(roiBitmap);
                     int byteSendLen = jpgByteArray.length + 16;
-                    serStrSend(myUtil.paddingString(String.valueOf(byteSendLen)));
+                    String imageLenStr ="L"+ myUtil.paddingString(String.valueOf(byteSendLen), 7);
+                    Log.i(STG, "Send Image Len:" + imageLenStr);
+                    serStrSend(imageLenStr);
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
@@ -462,16 +497,19 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 }
                 if (flagDetect){
                     byte[] detectArr = byteArrRES;
+                    byte[] rowArr = myUtil.convertValue2ByteArr(recKnitRow + "",6);
+                    System.arraycopy(rowArr, 0, detectArr, 1, 6);
                     Mat detectMat_1 = new Mat();
                     Mat detectMat_2 = new Mat();
-                    YarnDetectData DY1 = detectYarnInImage(grayscaleMat.getNativeObjAddr(), detectMat_1.getNativeObjAddr(), arrRoi1, arrDetectPar, saveFilePath+"\\roi_1");
-                    YarnDetectData DY2 = detectYarnInImage(grayscaleMat.getNativeObjAddr(), detectMat_2.getNativeObjAddr(), arrRoi2, arrDetectPar, saveFilePath+"\\roi_2");
+                    YarnDetectData DY1 = detectYarnInImage(grayscaleMat.getNativeObjAddr(), detectMat_1.getNativeObjAddr(), arrRoi1, arrDetectPar, saveFilePath + "\\" + knitTableName + "\\roi_1" + "\\" + recKnitRow + "_" + recKnitVelocity);
+                    YarnDetectData DY2 = detectYarnInImage(grayscaleMat.getNativeObjAddr(), detectMat_2.getNativeObjAddr(), arrRoi2, arrDetectPar, saveFilePath + "\\" + knitTableName + "\\roi_2" + "\\" + recKnitRow + "_" + recKnitVelocity);
+
                     switch (detectMode){
                         case Detect:{
                             if (DY1.getValue() == "0" && DY2.getValue() == "0" ){
-                                detectArr[4] = 0x48;
+                                detectArr[7] = 0x48;
                             }else {
-                                detectArr[4] = 0x49;
+                                detectArr[7] = 0x49;
                             }
                         }break;
                         //  参数保存
@@ -481,17 +519,17 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                             YarnDetectData[] dyArr = {DY1, DY2};
                             sqlInsertYarnData(dyArr);
                             if (DY1.getValue() == "0" && DY2.getValue() == "0" ){
-                                detectArr[4] = 0x48;
+                                detectArr[7] = 0x48;
                             }else {
-                                detectArr[4] = 0x49;
+                                detectArr[7] = 0x49;
                             }
                         }break;
                         case Compare:{
 
                         }break;
                     }
-
-                    serByteSend(detectArr);
+                    if (flag_serConnect)serByteSend(detectArr);
+                    Log.d(DAG, "DetectData:" + Arrays.toString(detectArr));
                 }
                 runOnUiThread(new Runnable() {
                     @Override
@@ -588,7 +626,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             float real_Iso_value = result.get(CaptureResult.SENSOR_SENSITIVITY);
             float real_focusDistance = result.get(CaptureResult.LENS_FOCUS_DISTANCE);
             if (real_exposureTime != 0) {
-                Log.i("camera_info", "ETR: " + real_exposureTime + " FPS: " + real_fps_Range + " FDR: " + real_focusDistance + " ISO: " + real_Iso_value);
+                Log.d("camera_info", "ETR: " + real_exposureTime + " FPS: " + real_fps_Range + " FDR: " + real_focusDistance + " ISO: " + real_Iso_value);
             }
         }
     };
@@ -602,7 +640,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         mPreviewBuilder.set(CaptureRequest.SENSOR_EXPOSURE_TIME, camera_exposureTime);
         mPreviewBuilder.set(CaptureRequest.SCALER_CROP_REGION, getRect(camera_zoomRatio));
         mPreviewBuilder.set(CaptureRequest.SENSOR_SENSITIVITY, camera_Iso);
-        Log.d(CAG, "相机参数设置");
+        Log.d(TAG, "相机参数设置");
     }
 
     private Rect getRect(float Input_zoomRatio) {
@@ -645,11 +683,11 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
 
     private void startPreview() {
         if (null == mCameraDevice) {
-            Log.e(CAG, "CameraDevice is null");
+            Log.e(TAG, "CameraDevice is null");
             return;
         }
         try {
-            Log.i(CAG, "申请预览");
+            Log.i(TAG, "申请预览");
             // 设置为手动模式
             mPreviewBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             setUpCameraPar();
@@ -659,7 +697,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 @Override
                 public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
                     mCaptureSession = cameraCaptureSession;
-                    Log.d(CAG, "createCaptureSession onConfigured");
+                    Log.d(TAG, "createCaptureSession onConfigured");
                     try {
                         mCaptureSession.setRepeatingRequest(mPreviewBuilder.build(), mCaptureCallback, mCameraSessionHandler);
                     } catch (CameraAccessException e) {
@@ -678,18 +716,19 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     }
 
     private void cameraOpen(final int width, final int height) {
+
         new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
                     cameraCharacteristics = cameraManager.getCameraCharacteristics(cameraId);
                     float maxZoom = cameraCharacteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM);
-                    Log.d(CAG, "maxZoom:" + maxZoom);
+                    Log.d(TAG, "maxZoom:" + maxZoom);
                     StreamConfigurationMap map = cameraCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
                     // 检查权限并请求权限，需要在主线程中进行
                     if ((checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) ||
                             (checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)) {
-                        Log.d(CAG, "No camera and storage permission");
+                        Log.d(TAG, "No camera and storage permission");
                         // 切换到主线程请求权限
                         runOnUiThread(new Runnable() {
                             @Override
@@ -699,7 +738,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                         });
                         return;
                     }
-                    Log.d(CAG, "开启相机");
+                    Log.d(TAG, "开启相机");
                     // 切换到主线程打开相机
                     runOnUiThread(new Runnable() {
                         @Override
@@ -764,14 +803,13 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             String timestamp = sdf.format(new Date()); // 获取当前时间并格式化为字符串
 
             // 将时间戳添加到消息字符串前或后
-            String fullMessage = timestamp + " - " + rec_msg; // 例如，在时间戳后添加消息
-
-
+            String RecMsg = timestamp + " - " + rec_msg; // 例如，在时间戳后添加消息
+            Log.d(TAG,"RecMsg:" + RecMsg);
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
                     // 更新TextView显示新的消息（包含时间戳）
-                    tv_ser_rec.setText(fullMessage);
+                    tv_ser_rec.setText(RecMsg);
                 }
             });
             try {
@@ -827,6 +865,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         private void serConnect() {
             if (flag_serConnect) {
                 Toast.makeText(MainActivity.this, "Serial port connected", Toast.LENGTH_SHORT).show();
+                soundStateMachine.switchState(1);
                 return;
             }
             SerListItem currentItem = serListItems.get(0);
@@ -856,6 +895,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     }
                 }
                 serStatusDisplay("Serial connect!");
+                Log.d(TAG, "Serial connect");
                 flag_serConnect = true;
                 transToNextStatus();
                 startHeartbeatThread();
@@ -882,6 +922,8 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             }
 
             flag_serConnect = false;
+            soundStateMachine.switchState(3);
+            Log.d(TAG, "Serial disconnect");
             serStatusDisplay("Serial disconnect!");
             transStatus(serialStatus.CLOSE);
         }
@@ -895,7 +937,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     throw new RuntimeException(e);
                 }
             } else {
-                Log.d("Serial", "Serial send error!");
+                Log.e(TAG, "Error Serial Send Str:" + str + ",flag_serConnect:" + flag_serConnect);
             }
         }
     void serStrSendByteArr(String str) {
@@ -922,7 +964,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 throw new RuntimeException(e);
             }
         } else {
-            Log.d("Serial", "Serial send error!");
+            Log.e(TAG, "Error Serial Send SendByteArr:" + str + ",flag_serConnect:" + flag_serConnect);
         }
     }
 
@@ -931,6 +973,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         try {
             usbSerialPort.write(arrByte, WRITE_WAIT_MILLIS);
         } catch (IOException e) {
+            Log.e(TAG, "Error Serial Send Byte");
             throw new RuntimeException(e);
         }
     }
@@ -966,7 +1009,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                                 bytesSent = chunkEnd;
                                 break; // 成功收到响应信号，跳出重发循环
                             } else {
-                                Log.e("DAG", "Failed to receive acknowledgment from MCU for chunk at position: " + bytesSent + ", attempt " + (attempt + 1));
+                                Log.e(TAG, "Serial Failed to receive acknowledgment from MCU for chunk at position: " + bytesSent + ", attempt " + (attempt + 1));
                             }
                         } catch (IOException e) {
                             throw new RuntimeException(e);
@@ -974,7 +1017,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     }
 
                     if (!sentSuccessfully) {
-                        Log.e("DAG", "Failed to send chunk after " + 3 + " attempts. Stopping transmission.");
+                        Log.e(TAG, "Failed to send chunk after " + 3 + " attempts. Stopping transmission.");
                         globalSendFlag = false;
                         break; // 若无法发送成功，停止发送
                     }
@@ -1042,27 +1085,29 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         serByteSend(byteArrMSG_START);
 
         // 发送相机参数
-        delaySendMsg(camera_focusDistance);
-        delaySendMsg(camera_Iso);
-        delaySendMsg(camera_exposureTime);
-        delaySendMsg(camera_zoomRatio);
+        delaySendMsg(camera_focusDistance, 200);
+        delaySendMsg(camera_Iso, 200);
+        delaySendMsg(camera_exposureTime, 200);
+        delaySendMsg(camera_zoomRatio, 200);
 
         // 发送两个ROI的坐标
         for (int i = 0; i < 4; i++) {
-            delaySendMsg(arrRoi1[i]);
+            delaySendMsg(arrRoi1[i], 200);
         }
         for (int i = 0; i < 4; i++) {
-            delaySendMsg(arrRoi2[i]);
+            delaySendMsg(arrRoi2[i], 200);
         }
 
         // 发送结束消息
-        serByteSend(byteArrMSG_FINISH);
+        for (int i = 0; i < 3; i++) {
+            delaySendMsg(byteArrMSG_FINISH, 200);
+        }
     }
 
-    private void delaySendMsg(Object value) throws InterruptedException {
+    private void delaySendMsg(Object value, long sleepTime) throws InterruptedException {
         serStrSendByteArr(String.valueOf(value));
         // 如果需要延迟，可以保留Thread.sleep，但通常不建议在串口通信中频繁使用
-         Thread.sleep(5); // 根据需要决定是否保留
+         Thread.sleep(sleepTime); // 根据需要决定是否保留
     }
 
 
@@ -1149,7 +1194,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     }
                     try {
                         // 每8秒发送一次心跳信号
-                        Thread.sleep(8000);
+                        Thread.sleep(7000);
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         break;
@@ -1162,8 +1207,10 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     private void transStatus(serialStatus newStatus){
         serialStatus preState = serNowStatus.get();
         serNowStatus.set(newStatus);
-        serStatusDisplay("Status:" + preState + " to " + newStatus + "!");
-        Log.d(STG,"State:" + preState + " to "+ newStatus + "!");
+        serStatusDisplay("Status Change:" + preState + " to " + newStatus + "!");
+        if (newStatus != serialStatus.CLOSE && newStatus != serialStatus.OPEN)
+            soundStateMachine.switchState(2);
+        Log.d(STG,"State change:" + preState + " to "+ newStatus + "!");
     }
 
         private void transToNextStatus(){
@@ -1186,7 +1233,6 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         }
 
         private boolean checkByteArray(byte[] inputBytes,byte[] targetBytes, int preIndex){
-        if (preIndex > 8)return false;
         for (int i = 0; i < preIndex; i++) {
                 if (inputBytes[i] != targetBytes[i])return false;
             }
@@ -1205,12 +1251,11 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         private void executeAction(byte[] inputBytes) throws InterruptedException, CameraAccessException {
             if (flag_serConnect) {
                 serialStatus currentStatus = serNowStatus.get();
-
                 if (checkByteArray(inputBytes, byteArrSTATUS, 8)) {
                     serStrSend("ST" + currentStatus.ordinal() + "Mo" + detectMode.ordinal());
+                    Log.d(STG, "GetStatus: ST" + currentStatus.ordinal() + "Mo" + detectMode.ordinal());
                     return;
                 }
-
                 switch (currentStatus) {
                     case MSG_END:
                         if (checkByteArray(inputBytes, byteArrACK, 8)) {
@@ -1269,19 +1314,21 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 serByteSend(byteArrPCO);
             }
             else {
-                Log.d(SAG, "Error RecMsg-Ready:" + Arrays.toString(inputBytes));
+                Log.d(STG, "Error RecMsg-Ready:" + Arrays.toString(inputBytes));
             }
         }
 
         // 处理 PIC 状态
-        private void handlePicState(byte[] inputBytes) {
+        private void handlePicState(byte[] inputBytes) throws InterruptedException {
+            Log.d(TAG, "PIC rec:" + Arrays.toString(inputBytes));
             if (checkByteArray(inputBytes, byteArrSTA, 8)) {
+                Log.d(STG, "Start Send Image");
                 flagGetImage = true;
             } else if (checkByteArray(inputBytes, byteArrEND, 8)) {
                 transToNextStatus();
                 serByteSend(byteArrBA2RE);
             } else {
-                Log.e(SAG, "Error RecMsg-Pic:" + Arrays.toString(inputBytes));
+                Log.e(STG, "Error RecMsg-Pic:" + Arrays.toString(inputBytes));
             }
         }
 
@@ -1294,16 +1341,20 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 resetEditStatus();
                 edit_roi_status = 1;
                 serStatusDisplay("Edit:ROI");
+                Log.d(STG, "Edit State: ROI");
             } else if (checkByteArray(inputBytes, byteArrS2CAM1, 8)) {
                 resetEditStatus();
                 edit_params_status = 5;
                 serStatusDisplay("Edit:CAM");
+                Log.d(STG, "Edit State: CAM");
             } else if (checkByteArray(inputBytes, byteArrMODE, 5)) {
                 serSetParameter(inputBytes, 9);
                 serStatusDisplay("Edit:MOD");
+                Log.d(STG, "Edit State: MOD");
             } else if (checkByteArray(inputBytes, byteArrS2NAME, 8)) {
                 edit_filename_status = 1;
                 serStatusDisplay("Edit:NAME");
+                Log.d(STG, "Edit State: KNIT NAME");
             } else if (checkByteArray(inputBytes, byteArrGETPAR, 8)) {
                 serSendParams();
             } else {
@@ -1318,14 +1369,22 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 transToNextStatus();
             } else if (checkByteArray(inputBytes, byteArrTNAM, 8)) {
                 sqlGetTableNameArray(true);
+                Log.d(STG, "SQL State: Create knit table name");
             } else if (checkByteArray(inputBytes, byteArrTCHA, 8)) {
                 sqlHandleState = 1;
+                Log.d(STG, "SQL State: Change knit table name");
             } else if (checkByteArray(inputBytes, byteArrTDRO, 8)) {
                 sqlHandleState = 2;
+                Log.d(STG, "SQL State: Drop knit table name");
+            } else if (checkByteArray(inputBytes, byteArrQUERY, 8)) {
+                sqlHandleState = 3;
+                Log.d(STG, "SQL State: Query knit element");
             } else if (checkByteArray(inputBytes, byteArrTDRA, 8)) {
                 dbTool.dropAllTables();
+                Log.d(STG, "SQL State: Drop all table");
                 sqlGetTableNameArray(true);
-            } else {
+            }
+            else {
                 if (sqlHandleState != 0){
                     processSQLStateData(inputBytes, sqlHandleState);
                     sqlHandleState = 0;
@@ -1335,18 +1394,31 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
 
         private void processSQLStateData(byte[] inputBytes, int sqlstate){
             switch (sqlstate){
-                case 2:{
-                    // 删除表
-                    String recTableName = myUtil.convertHexBytesToString(inputBytes);
-                    dbTool.dropTable(recTableName);
-                    serByteSend(byteArrACK);
-                }break;
                 case 1:{
                     // 切换表
                     String recTableName = myUtil.convertHexBytesToString(inputBytes);
                     knitTableName = recTableName;
                     sqlUpdateCameraParameter(knitTableName);
                     serByteSend(byteArrACK);
+                }break;
+                case 2:{
+                    // 删除表
+                    String recTableName = myUtil.convertHexBytesToString(inputBytes);
+                    dbTool.dropTable(recTableName);
+                    serByteSend(byteArrACK);
+                }break;
+                case 3:{
+                    String queryName = myUtil.convertHexBytesToString(inputBytes);
+                    YarnDetectData getData = dbTool.fetchYarnDataById(knitTableName, queryName);
+                    serByteSend(byteArrMSG_START);
+                    if (getData != null) {
+                        serByteSend(getData.toByteArr());
+                    }else {
+                        serStrSend("NoFindData");
+                    }
+                    for (int i = 0; i < 3; i++) {
+                        serByteSend(byteArrMSG_FINISH);
+                    }
                 }break;
             }
         }
@@ -1367,7 +1439,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 recKnitRow = Integer.parseInt(myUtil.convertHexBytesToString(arrYarnRow));
                 serStatusDisplay("KnitRow:" + recKnitRow);
             } else {
-                Log.e(SAG, "Error RecMsg-Active:" + Arrays.toString(inputBytes));
+                Log.e(STG, "Error RecMsg-Act:" + Arrays.toString(inputBytes));
             }
         }
 
@@ -1422,6 +1494,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                         }
                     }else {
                         serStrSend("Err:4");
+                        Log.e(STG, "Edit Param Set Error: " + Arrays.toString(inputBytes));
                     }
                 }
             }
@@ -1440,17 +1513,17 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             return OPERATION_FAILED;
         }
         if (dbTool.isTableExists(tableName)) {
-            Log.d(QTG, "Table TABLE_EXISTS");
+            Log.d(QTG, "Table TABLE_EXISTS: " + tableName);
             sqlUpdateCameraParameter(tableName);
             return TABLE_EXISTS;
         } else {
             try {
                 if (dbTool.createTable(tableName)) {
                     sqlInsertCameraParameter(tableName);
-                    Log.d(QTG, "Table TABLE_CREATE");
+                    Log.d(QTG, "Table TABLE_CREATE: " + tableName);
                     return TABLE_CREATED;
                 } else {
-                    Log.d(QTG, "Table TABLE_CREATE_FAILD");
+                    Log.d(QTG, "Table TABLE_CREATE_FAILED: " + tableName);
                     return OPERATION_FAILED;
                 }
             } catch (Exception e) {
@@ -1474,6 +1547,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         valuesList.add(dbTool.createContentValues("arrRoi2", String.valueOf(arrayToSting(arrRoi2)),0.0f, 0, 0));
         // 批量插入数据
         dbTool.batchInsertData(tableName, valuesList);
+        Log.d(QTG, "数据库插入相机参数");
     }
 
     private void sqlInsertYarnData(YarnDetectData[] detectData){
@@ -1508,16 +1582,14 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         // 定义 WHERE 子句和参数
         String whereClause = "KEY = ?";
         String[] whereArgs = new String[] { key };
-
         // 执行更新
         int rowsAffected = dbTool.updateData(tablename, values, whereClause, whereArgs);
-
-        // 打印更新结果（可选）
-        Log.d(STG, "更新 " + key + " 时受影响的行数: " + rowsAffected);
+        // 打印更新结果
+        Log.d(QTG, "更新 " + key + " 时受影响的行数(数据库中的表): " + rowsAffected);
     }
 
     private YarnDetectData sqlGetDetectInfo(int yarnRow){
-        YarnDetectData get_yarn_data = dbTool.fetchDataById(knitTableName, "Row" + String.valueOf(yarnRow));
+        YarnDetectData get_yarn_data = dbTool.fetchYarnDataById(knitTableName, "Row" + String.valueOf(yarnRow));
         return get_yarn_data;
     }
 
@@ -1530,6 +1602,12 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         if (flag_serConnect && serSend) {
             serStrSendByteArr("Len:" + listSize + ";");
         }
+        try {
+            // 延时发送，每次发送后暂停200毫秒
+            Thread.sleep(100); // 这里的时间可以根据你的需求调整
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
         for (String table : tablesList) {
             Log.d(QTG, "TableName: " + table);
             if (index != 0) {
@@ -1537,12 +1615,27 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     serStrSendByteArr(index - 1 + ":" + table + ";");
                 }
             }
+            try {
+                // 延时发送，每次发送后暂停200毫秒
+                Thread.sleep(100); // 这里的时间可以根据你的需求调整
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
             index++;
         }
         if (flag_serConnect && serSend) {
-            serByteSend(byteArrMSG_FINISH);
+            for (int i = 0; i < 3; i++) {
+                serByteSend(byteArrMSG_FINISH);
+            }
+            try {
+                // 延时发送，每次发送后暂停200毫秒
+                Thread.sleep(100); // 这里的时间可以根据你的需求调整
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
         }
     }
+
 
 
 
@@ -1617,7 +1710,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             public void onClick(View v) {
                 String fetch_key = et_fetch_key.getText().toString();
                 String getTableName = sql_table_name.getText().toString();
-                YarnDetectData findDetectData = dbTool.fetchDataById(getTableName, fetch_key);
+                YarnDetectData findDetectData = dbTool.fetchYarnDataById(getTableName, fetch_key);
                 if (findDetectData != null) {
                     Log.d(QTG, "DetectData" + findDetectData.toString());
                 }

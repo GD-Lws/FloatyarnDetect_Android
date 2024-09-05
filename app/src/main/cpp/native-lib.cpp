@@ -125,16 +125,13 @@ Java_com_example_myapplication_MainActivity_detectYarnInImage(JNIEnv* env, jobje
 
     // 获取 ROI 和检测参数
     jint* roi1Array = env->GetIntArrayElements(roi, nullptr);
-    if (!roi1Array) {
-        env->ReleaseStringUTFChars(saveFilePath, filePath);
-        return nullptr; // 获取 ROI 数组失败，返回 null
-    }
-
     jfloat* detectArray = env->GetFloatArrayElements(detectPar, nullptr);
-    if (!detectArray) {
-        env->ReleaseIntArrayElements(roi, roi1Array, JNI_ABORT);
+
+    if (!roi1Array || !detectArray) {
         env->ReleaseStringUTFChars(saveFilePath, filePath);
-        return nullptr; // 获取检测参数数组失败，返回 null
+        if (roi1Array) env->ReleaseIntArrayElements(roi, roi1Array, JNI_ABORT);
+        if (detectArray) env->ReleaseFloatArrayElements(detectPar, detectArray, JNI_ABORT);
+        return nullptr; // 获取 ROI 或检测参数数组失败，返回 null
     }
 
     // 复制原始图像到输出图像
@@ -145,40 +142,27 @@ Java_com_example_myapplication_MainActivity_detectYarnInImage(JNIEnv* env, jobje
     myRoi(matRaw, roiImg, roi1Array);
 
     // 检测 ROI 区域中的纱线
-    cv::Mat resultImg;
     DetectionResult detectResult;
-    myDetect(roiImg, resultImg, detectArray[0], detectArray[1], detectArray[2], &detectResult);
+    __android_log_print(ANDROID_LOG_DEBUG, TAG, "Start Detect");
 
-    // 将检测结果复制到输出图像中的相应 ROI 区域
-    if (detectResult.position != -1) {
-        try {
-            matAfter(cv::Rect(roi1Array[0], roi1Array[1], roi1Array[2] - roi1Array[0], roi1Array[3] - roi1Array[1])) = resultImg;
-        } catch (const cv::Exception& e) {
-            __android_log_print(ANDROID_LOG_ERROR, "MyAppTag", "Error in copying result to matAfter: %s", e.what());
-            // 清理资源
-            env->ReleaseFloatArrayElements(detectPar, detectArray, JNI_ABORT);
-            env->ReleaseIntArrayElements(roi, roi1Array, JNI_ABORT);
-            env->ReleaseStringUTFChars(saveFilePath, filePath);
-            return nullptr; // 复制结果失败，返回 null
-        }
-    }
+    myDetect(roiImg, matAfter, detectArray[0], detectArray[1], detectArray[2], &detectResult);
 
     // 创建 Java YarnDetectData 对象
     jclass yarnDetectDataClass = env->FindClass("com/example/myapplication/YarnDetectData");
     if (!yarnDetectDataClass) {
-        __android_log_print(ANDROID_LOG_ERROR, "MyAppTag", "Could not find YarnDetectData class");
-        env->ReleaseFloatArrayElements(detectPar, detectArray, JNI_ABORT);
-        env->ReleaseIntArrayElements(roi, roi1Array, JNI_ABORT);
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "Could not find YarnDetectData class");
         env->ReleaseStringUTFChars(saveFilePath, filePath);
+        env->ReleaseIntArrayElements(roi, roi1Array, JNI_ABORT);
+        env->ReleaseFloatArrayElements(detectPar, detectArray, JNI_ABORT);
         return nullptr; // 找不到类，返回 null
     }
 
     jmethodID yarnDetectDataConstructor = env->GetMethodID(yarnDetectDataClass, "<init>", "(Ljava/lang/String;Ljava/lang/String;FII)V");
     if (!yarnDetectDataConstructor) {
-        __android_log_print(ANDROID_LOG_ERROR, "MyAppTag", "Could not find YarnDetectData constructor");
-        env->ReleaseFloatArrayElements(detectPar, detectArray, JNI_ABORT);
-        env->ReleaseIntArrayElements(roi, roi1Array, JNI_ABORT);
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "Could not find YarnDetectData constructor");
         env->ReleaseStringUTFChars(saveFilePath, filePath);
+        env->ReleaseIntArrayElements(roi, roi1Array, JNI_ABORT);
+        env->ReleaseFloatArrayElements(detectPar, detectArray, JNI_ABORT);
         return nullptr; // 找不到构造函数，返回 null
     }
 
@@ -186,34 +170,72 @@ Java_com_example_myapplication_MainActivity_detectYarnInImage(JNIEnv* env, jobje
                                                env->NewStringUTF("0"),
                                                env->NewStringUTF(std::to_string(detectResult.position).c_str()),
                                                0.0f,
-                                               detectResult.areaRatio, // 使用比例
-                                               static_cast<int>(detectResult.areaRatio * 100)); // 比例转为百分比
+                                               detectResult.areaRatio,
+                                               static_cast<int>(detectResult.areaRatio * 100));
     if (!yarnDetectDataObj) {
         __android_log_print(ANDROID_LOG_ERROR, "MyAppTag", "Failed to create YarnDetectData object");
-        env->ReleaseFloatArrayElements(detectPar, detectArray, JNI_ABORT);
-        env->ReleaseIntArrayElements(roi, roi1Array, JNI_ABORT);
-        env->ReleaseStringUTFChars(saveFilePath, filePath);
-        return nullptr; // 创建对象失败，返回 null
     }
 
     // 保存图像到指定路径（如有需要）
     if (strcmp(filePath, "N") != 0) {
         std::string savePath = std::string(filePath) + ".bmp";
-        if (!imwrite(savePath, roiImg)) {
-            __android_log_print(ANDROID_LOG_ERROR, "MyAppTag", "Failed to save image to path: %s", savePath.c_str());
+        if (!imwrite(savePath, matAfter)) {
+            __android_log_print(ANDROID_LOG_ERROR, TAG, "Failed to save image to path: %s", savePath.c_str());
         } else {
-            __android_log_print(ANDROID_LOG_INFO, "MyAppTag", "Image saved to path: %s", savePath.c_str());
+            __android_log_print(ANDROID_LOG_INFO, TAG, "Image saved to path: %s", savePath.c_str());
         }
     }
 
     // 释放资源
-    env->ReleaseFloatArrayElements(detectPar, detectArray, JNI_ABORT);
-    env->ReleaseIntArrayElements(roi, roi1Array, JNI_ABORT);
     env->ReleaseStringUTFChars(saveFilePath, filePath);
+    env->ReleaseIntArrayElements(roi, roi1Array, JNI_ABORT);
+    env->ReleaseFloatArrayElements(detectPar, detectArray, JNI_ABORT);
 
     // 返回检测数据对象
     return yarnDetectDataObj;
 }
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_example_myapplication_MainActivity_matMerge(JNIEnv* env, jobject p_this, jlong matTarget, jlong matOut, jlongArray matInArray, jintArray roiArray) {
+    // 获取 Mat 对象
+    cv::Mat& matTgt = *(cv::Mat*) matTarget;
+    cv::Mat& matAfter = *(cv::Mat*) matOut;
+
+    // 将 matTgt 复制到 matAfter，以确保 matTgt 本身不受影响
+    matTgt.copyTo(matAfter);
+
+    // 获取 ROI 和输入的 mat 数组
+    jint* roi1Array = env->GetIntArrayElements(roiArray, nullptr);
+    if (!roi1Array) {
+        return; // 获取 ROI 数组失败，直接返回
+    }
+
+    jsize matCount = env->GetArrayLength(matInArray);
+    jlong* matArray = env->GetLongArrayElements(matInArray, nullptr);
+    if (!matArray) {
+        env->ReleaseIntArrayElements(roiArray, roi1Array, JNI_ABORT);
+        return; // 获取 mat 数组失败，释放 ROI 数组并返回
+    }
+
+    // 遍历输入的 mat 数组，将每个 mat 复制到 matAfter 中的相应位置
+    for (jsize i = 0; i < matCount; ++i) {
+        cv::Mat& matSrc = *(cv::Mat*) matArray[i];
+        try {
+            // 使用 x1, y1, x2, y2 定义 ROI 区域
+            cv::Rect roi(roi1Array[4 * i], roi1Array[4 * i + 1],
+                         roi1Array[4 * i + 2] - roi1Array[4 * i],
+                         roi1Array[4 * i + 3] - roi1Array[4 * i + 1]);
+            matSrc.copyTo(matAfter(roi));
+        } catch (const cv::Exception& e) {
+            __android_log_print(ANDROID_LOG_ERROR, "MyAppTag", "Error in copying mat to matAfter: %s", e.what());
+        }
+    }
+
+    // 释放资源
+    env->ReleaseIntArrayElements(roiArray, roi1Array, JNI_ABORT);
+    env->ReleaseLongArrayElements(matInArray, matArray, JNI_ABORT);
+}
+
 
 
 extern "C" JNIEXPORT void JNICALL

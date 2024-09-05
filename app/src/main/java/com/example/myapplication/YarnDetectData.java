@@ -40,6 +40,21 @@ public class YarnDetectData {
 
     @Override
     public String toString() {
-        return "Key: " + key + ", Value: " + value + ",Velocity" + velocity + ", Lum: " + lum + ", Region: " + region;
+        return "Key\r\n" + key + "\r\nValue\r\n" + value + "\r\nVel\r\n" + velocity + "\r\nLum\r\n" + lum + "\r\nReg\r\n" + region;
+    }
+    public byte[] toByteArr() {
+        String resString = toString();
+        byte[] resByte = resString.getBytes();
+
+        int length = resByte.length;
+        int padding = 8 - (length % 8);
+
+        if (padding < 8) { // Only pad if the length is not already a multiple of 8
+            byte[] paddedByte = new byte[length + padding];
+            System.arraycopy(resByte, 0, paddedByte, 0, length);
+            return paddedByte; // The new array is returned with padding
+        } else {
+            return resByte; // No padding needed, return the original array
+        }
     }
 }

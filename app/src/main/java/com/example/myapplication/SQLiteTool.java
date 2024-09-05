@@ -9,15 +9,12 @@ import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.util.Log;
 
-import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -43,7 +40,7 @@ public class SQLiteTool extends SQLiteOpenHelper {
         Log.d(TAG, "数据库升级：从版本 " + oldVersion + " 升级到 " + newVersion);
     }
 
-    public YarnDetectData fetchDataById(String tableName, String key) {
+    public YarnDetectData fetchYarnDataById(String tableName, String key) {
         // 定义查询参数
         String[] columns = {"KEY", "VALUE", "LUM", "REGION"}; // 要查询的列
         String selection = "KEY = ?"; // WHERE子句

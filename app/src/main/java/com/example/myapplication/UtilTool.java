@@ -295,10 +295,10 @@ public class UtilTool {
     }
 
 //  用于填
-    public static String paddingString(String inputString){
+    public static String paddingString(String inputString, int len){
         int length = inputString.length();
-        if (length < 8){
-            for (int i = 0; i < 8-length; i++) {
+        if (length < len){
+            for (int i = 0; i < len-length; i++) {
                 inputString = "0" + inputString;
             }
         }
@@ -322,6 +322,18 @@ public class UtilTool {
         byte[] jpegData = byteArrayOutputStream.toByteArray();
         return jpegData;
     }
+
+    public byte[] convertValue2ByteArr(String value, int arrLen) {
+        byte[] strArr = value.getBytes();
+        byte[] resArr = new byte[arrLen];
+
+        int copyLength = Math.min(strArr.length, arrLen);
+        int startPos = arrLen - copyLength;
+
+        System.arraycopy(strArr, 0, resArr, startPos, copyLength);
+        return resArr;
+    }
+
     public void writeBytesAsHexToFile(byte[] byteArray, String directoryPath, String fileName) throws IOException {
         // 创建目录
         File dir = new File(directoryPath);
