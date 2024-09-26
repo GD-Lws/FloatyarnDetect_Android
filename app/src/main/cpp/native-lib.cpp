@@ -196,7 +196,7 @@ Java_com_example_myapplication_MainActivity_detectYarnInImage(JNIEnv* env, jobje
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_example_myapplication_MainActivity_matMerge(JNIEnv* env, jobject p_this, jlong matTarget, jlong matOut, jlongArray matInArray, jintArray roiArray) {
+Java_com_example_myapplication_MainActivity_matMerge(JNIEnv* env, jobject p_this, jlong matTarget, jlong matOut, jlong matRoi1, jlong matRoi2, jintArray roiArray) {
     // 获取 Mat 对象
     cv::Mat& matTgt = *(cv::Mat*) matTarget;
     cv::Mat& matAfter = *(cv::Mat*) matOut;
@@ -204,37 +204,38 @@ Java_com_example_myapplication_MainActivity_matMerge(JNIEnv* env, jobject p_this
     // 将 matTgt 复制到 matAfter，以确保 matTgt 本身不受影响
     matTgt.copyTo(matAfter);
 
-    // 获取 ROI 和输入的 mat 数组
+    // 获取 ROI 数组
     jint* roi1Array = env->GetIntArrayElements(roiArray, nullptr);
     if (!roi1Array) {
         return; // 获取 ROI 数组失败，直接返回
     }
 
-    jsize matCount = env->GetArrayLength(matInArray);
-    jlong* matArray = env->GetLongArrayElements(matInArray, nullptr);
-    if (!matArray) {
-        env->ReleaseIntArrayElements(roiArray, roi1Array, JNI_ABORT);
-        return; // 获取 mat 数组失败，释放 ROI 数组并返回
+    try {
+        // 获取 matRoi1 和 matRoi2
+        cv::Mat& matSrc1 = *(cv::Mat*) matRoi1;
+        cv::Mat& matSrc2 = *(cv::Mat*) matRoi2;
+
+        // 使用 roiArray 定义 ROI1 区域，并将 matRoi1 复制到 matAfter
+        cv::Rect roi1(roi1Array[0], roi1Array[1],
+                      roi1Array[2] - roi1Array[0],
+                      roi1Array[3] - roi1Array[1]);
+        matSrc1.copyTo(matAfter(roi1));
+
+        // 使用 roiArray 定义 ROI2 区域，并将 matRoi2 复制到 matAfter
+        cv::Rect roi2(roi1Array[4], roi1Array[5],
+                      roi1Array[6] - roi1Array[4],
+                      roi1Array[7] - roi1Array[5]);
+        matSrc2.copyTo(matAfter(roi2));
+
+    } catch (const cv::Exception& e) {
+        // 捕捉 OpenCV 异常并打印日志
+        __android_log_print(ANDROID_LOG_ERROR, "MyAppTag", "Error in copying mat to matAfter: %s", e.what());
     }
 
-    // 遍历输入的 mat 数组，将每个 mat 复制到 matAfter 中的相应位置
-    for (jsize i = 0; i < matCount; ++i) {
-        cv::Mat& matSrc = *(cv::Mat*) matArray[i];
-        try {
-            // 使用 x1, y1, x2, y2 定义 ROI 区域
-            cv::Rect roi(roi1Array[4 * i], roi1Array[4 * i + 1],
-                         roi1Array[4 * i + 2] - roi1Array[4 * i],
-                         roi1Array[4 * i + 3] - roi1Array[4 * i + 1]);
-            matSrc.copyTo(matAfter(roi));
-        } catch (const cv::Exception& e) {
-            __android_log_print(ANDROID_LOG_ERROR, "MyAppTag", "Error in copying mat to matAfter: %s", e.what());
-        }
-    }
-
-    // 释放资源
+    // 确保在操作结束后释放 ROI 数组
     env->ReleaseIntArrayElements(roiArray, roi1Array, JNI_ABORT);
-    env->ReleaseLongArrayElements(matInArray, matArray, JNI_ABORT);
 }
+
 
 
 

@@ -35,14 +35,63 @@ public class SQLiteTool extends SQLiteOpenHelper {
         Log.d(TAG, "数据库已创建");
     }
 
+
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         Log.d(TAG, "数据库升级：从版本 " + oldVersion + " 升级到 " + newVersion);
     }
 
+    public void sqlUpdateCameraParameter(String tableName, CameraParameters cameraParameters, int[] arrRoi1, int[] arrRoi2){
+        sqlUpdateParameter(tableName, "camera_focusDistance",cameraParameters.getFocusDistance());
+        sqlUpdateParameter(tableName, "camera_Iso", cameraParameters.getIso());
+        sqlUpdateParameter(tableName, "camera_exposureTime", cameraParameters.getExposureTime());
+        sqlUpdateParameter(tableName, "camera_zoomRatio", cameraParameters.getZoomRatio());
+        sqlUpdateParameter(tableName, "arrRoi1",arrayToSting(arrRoi1));
+        sqlUpdateParameter(tableName, "arrRoi2",arrayToSting(arrRoi2));
+    }
+
+    public void sqlInsertCameraParameter(String tableName, CameraParameters cameraParameters, int[] arrRoi1, int[] arrRoi2){
+        List<ContentValues> valuesList = new ArrayList<>();
+        valuesList.add(createContentValues("camera_focusDistance", String.valueOf(cameraParameters.getFocusDistance()),0.0f, 0, 0));
+        valuesList.add(createContentValues("camera_Iso", String.valueOf(cameraParameters.getIso()), 0.0f, 0, 0));
+        valuesList.add(createContentValues("camera_exposureTime", String.valueOf(cameraParameters.getExposureTime()),0.0f, 0, 0));
+        valuesList.add(createContentValues("camera_zoomRatio", String.valueOf(cameraParameters.getZoomRatio()),0.0f, 0, 0));
+
+        valuesList.add(createContentValues("arrRoi1", String.valueOf(arrayToSting(arrRoi1)),0.0f, 0, 0));
+        valuesList.add(createContentValues("arrRoi2", String.valueOf(arrayToSting(arrRoi2)),0.0f, 0, 0));
+        // 批量插入数据
+        batchInsertData(tableName, valuesList);
+        Log.d(TAG, "数据库插入相机参数");
+    }
+
+    public String arrayToSting(int[] arr){
+        StringBuilder backString = new StringBuilder();
+        for (int element : arr) {
+            backString.append(String.valueOf(element)).append(" ");
+        }
+        return backString.toString().trim();
+    }
+
+    public void sqlUpdateParameter(String tableName, String key, Object value) {
+        ContentValues values = new ContentValues();
+        values.put("VALUE", String.valueOf(value)); // 更新的值
+
+        // 定义 WHERE 子句和参数
+        String whereClause = "KEY = ?";
+        String[] whereArgs = new String[] { key };
+        // 执行更新
+        int rowsAffected = updateData(tableName, values, whereClause, whereArgs);
+        // 打印更新结果
+        Log.d(TAG, "更新 " + key + " 时受影响的行数(数据库中的表): " + rowsAffected);
+    }
+    public YarnDetectData sqlGetDetectInfo(int yarnRow, String knitTableName){
+        YarnDetectData get_yarn_data = fetchYarnDataById(knitTableName, "Row" + String.valueOf(yarnRow));
+        return get_yarn_data;
+    }
+
     public YarnDetectData fetchYarnDataById(String tableName, String key) {
         // 定义查询参数
-        String[] columns = {"KEY", "VALUE", "LUM", "REGION"}; // 要查询的列
+        String[] columns = {"KEY", "VALUE", "VELOCITY", "LUM", "REGION"}; // 要查询的列
         String selection = "KEY = ?"; // WHERE子句
         String[] selectionArgs = {String.valueOf(key)}; // WHERE子句中的参数
         SQLiteDatabase db = getReadableDatabase();
@@ -137,8 +186,8 @@ public class SQLiteTool extends SQLiteOpenHelper {
                     "LUM INTEGER, " +
                     "REGION INTEGER" +
                     ");";
-
             db.execSQL(createTableSQL);
+            Log.d(TAG, "createTableSQL:" + createTableSQL);
             return true;
         } catch (SQLException e) {
             Log.e(TAG, "创建表时出错：" + e.getMessage());
@@ -157,14 +206,33 @@ public class SQLiteTool extends SQLiteOpenHelper {
      * @param values    数据值，键为列名，值为列值
      * @return 插入的行ID，如果插入失败则返回-1
      */
-    public long insertData(String tableName, ContentValues values) {
+    public long insertOrUpdateData(String tableName, ContentValues values ) {
         SQLiteDatabase db = null;
+        String keyColumnName = "KEY";
         long result = -1;
         try {
             db = this.getWritableDatabase();
-            result = db.insert(tableName, null, values);
+            // 检查是否已经存在相同的 Key
+            String keyValue = values.getAsString(keyColumnName);
+            String selection = keyColumnName + " = ?";
+            String[] selectionArgs = { keyValue };
+
+            // 查询表中是否存在该 Key
+            Cursor cursor = db.query(tableName, null, selection, selectionArgs, null, null, null);
+            boolean recordExists = cursor.moveToFirst();  // true if record exists
+            cursor.close();
+
+            if (recordExists) {
+                // 如果存在相同的 Key，则执行更新
+                result = db.update(tableName, values, selection, selectionArgs);
+                Log.d(TAG, "数据更新成功，Key: " + keyValue);
+            } else {
+                // 如果不存在，则执行插入
+                result = db.insert(tableName, null, values);
+                Log.d(TAG, "数据插入成功，Key: " + keyValue);
+            }
         } catch (SQLException e) {
-            Log.e(TAG, "插入数据时出错：" + e.getMessage());
+            Log.e(TAG, "插入或更新数据时出错：" + e.getMessage());
         } finally {
             if (db != null && db.isOpen()) {
                 db.close();
@@ -211,6 +279,7 @@ public class SQLiteTool extends SQLiteOpenHelper {
                 db.insert(tableName, null, values);
             }
             db.setTransactionSuccessful();  // 设置事务成功
+            Log.d(TAG, "批量插入数据成功");
         } catch (SQLException e) {
             Log.e(TAG, "批量插入数据时出错：" + e.getMessage());
         } finally {

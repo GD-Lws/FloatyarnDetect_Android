@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
+import android.graphics.Rect;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.media.Image;
@@ -39,6 +40,50 @@ public class UtilTool {
     public UtilTool(){
 
     }
+    public byte[] arrHeartBeat_op = {0x63, 0x69, 0x78, 0x69, 0x6e, 0x67, 0x0d, 0x0a};
+
+    // RE2PC 指令
+    public byte[] byteArrRE2PC = {0x52, 0x45, 0x32, 0x50, 0x43, 0x0d, 0x0a, 0x00};
+    public byte[] byteArrRE2ED = {0x52, 0x45, 0x32, 0x45, 0x44, 0x0d, 0x0a, 0x00};
+    public byte[] byteArrRE2AC = {0x52, 0x45, 0x32, 0x41, 0x43, 0x0d, 0x0a, 0x00};
+    public byte[] byteArrBA2RE = {0x42, 0x41, 0x32, 0x52, 0x45, 0x0d, 0x0a, 0x00};
+    public byte[] byteArrOP2RE = {0x4F, 0x50, 0x32, 0x52, 0x45, 0x0d, 0x0a, 0x00};
+    public byte[] byteArrSTATUS = {0x53, 0x54, 0x41, 0x54, 0x55, 0x53, 0x0d, 0x0a};
+
+    // 其他指令
+    public byte[] byteArrSTA = {0x53, 0x54, 0x41, 0x0d, 0x0a, 0x00, 0x00, 0x00};
+    public byte[] byteArrACK = {0x41, 0x43, 0x4B, 0x0d, 0x0a, 0x00, 0x00, 0x00};
+    public byte[] byteArrEND = {0x45, 0x4E, 0x44, 0x0d, 0x0a, 0x00, 0x00, 0x00};
+    public byte[] byteArrMSG_START = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
+    public byte[] byteArrMSG_FINISH = {0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F};
+
+    // PCO 和 PCC 指令
+    public byte[] byteArrPCO = {0x50, 0x43, 0x4F, 0x0d, 0x0a, 0x00, 0x00, 0x00};
+    public byte[] arrPCC = {0x50, 0x43, 0x43, 0x0d, 0x0a, 0x00, 0x00, 0x00};
+
+    // S2ROI 和 相机控制指令
+    public byte[] byteArrS2ROI1 = {0x53, 0x32, 0x52, 0x4F, 0x49, 0x31, 0x0d, 0x0a};
+    public byte[] byteArrS2CAM1 = {0x53, 0x32, 0x43, 0x41, 0x4D, 0x31, 0x0d, 0x0a};
+    public byte[] arrS2CAM2 = {0x53, 0x32, 0x43, 0x41, 0x4D, 0x32, 0x0d, 0x0a};
+    public byte[] arrS2CAM3 = {0x53, 0x32, 0x43, 0x41, 0x4D, 0x33, 0x0d, 0x0a};
+    public byte[] arrS2CAM4 = {0x53, 0x32, 0x43, 0x41, 0x4D, 0x34, 0x0d, 0x0a};
+    public byte[] byteArrMODE = {0x4D, 0x4F, 0x44, 0x45, 0x3A, 0x31, 0x0d, 0x0a};
+    public byte[] byteArrYARN = {0x59, 0x52, 0x3A, 0x00, 0x00, 0x00, 0x00, 0x00};
+    public byte[] byteArrS2NAME = {0x53, 0x32, 0x4E, 0x61, 0x6D, 0x65, 0x0d, 0x0a};
+    public byte[] byteArrDetect = {0x44, 0x45, 0x54, 0x45, 0x43, 0x54, 0x0d, 0x0a};
+
+    // SQL 相关指令
+    public byte[] byteArrRE2SQL = {0x52, 0x45, 0x32, 0x53, 0x51, 0x4C, 0x0d, 0x0a};
+    public byte[] byteArrTDRO = {0x54, 0x44, 0x52, 0x4F, 0x0d, 0x0a, 0x00, 0x00};
+    public byte[] byteArrTNAM = {0x54, 0x4E, 0x41, 0x4D, 0x0d, 0x0a, 0x00, 0x00};
+    public byte[] byteArrTCHA = {0x54, 0x43, 0x48, 0x41, 0x3A, 0x31, 0x00, 0x00};
+    public byte[] byteArrTDRA = {0x54, 0x44, 0x52, 0x41, 0x0d, 0x0a, 0x00, 0x00};
+    public byte[] byteArrQUERY = {0x54, 0x51, 0x55, 0x45, 0x52, 0x59, 0x0d, 0x0a};
+
+    // 其他指令
+    public byte[] byteArrGETPAR = {0x47, 0x45, 0x54, 0x50, 0x41, 0x52, 0x0d, 0x0a};
+    public byte[] byteArrRES = {0x4B, 0x45, 0x53, 0x3A, 0x31, 0x0d, 0x0a, 0x00};
+    public byte[] byteArrIMAGE = {0x49, 0x4D, 0x41, 0x47, 0x45, 0x0d, 0x0a, 0x00};
     private static final int REQUEST_CODE_PERMISSIONS = 100;
     private static final String FAG = "FileTest";
     // 所需的权限列表
@@ -73,6 +118,20 @@ public class UtilTool {
             return false; // 顶点超出范围，返回false
         }
         return true; // 顶点在范围内，返回true
+    }
+
+    public Rect getRect(CameraCharacteristics cameraCharacteristics, float Input_zoomRatio) {
+        Rect sensorSize = cameraCharacteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
+        int centerX = sensorSize.centerX();
+        int centerY = sensorSize.centerY();
+        int deltaX = (int) ((sensorSize.width() / (2 * Input_zoomRatio)) + 0.5f);
+        int deltaY = (int) ((sensorSize.height() / (2 * Input_zoomRatio)) + 0.5f);
+        Rect outputRect = new Rect(
+                Math.max(centerX - deltaX, 0),
+                Math.max(centerY - deltaY, 0),
+                Math.min(centerX + deltaX, sensorSize.width() - 1),
+                Math.min(centerY + deltaY, sensorSize.height() - 1));
+        return outputRect;
     }
 
     public static Mat imageToMat(Image image) {
@@ -219,11 +278,6 @@ public class UtilTool {
     private final float MINFD =  3.0f;
 
 
-
-//    public static boolean checkCameraParamsRange(long ET, int ISO, float FD, float ZR){
-//
-//    }
-
     public static void logCameraParamsRange(String tag,CameraManager cameraManager){
         try {
             String[] cameraIds = cameraManager.getCameraIdList();
@@ -294,6 +348,24 @@ public class UtilTool {
         return new int[]{x1, y1};
     }
 
+    public static int[] stringToIntArray(String str) {
+        // 去掉方括号 [ 和 ]
+        str = str.replace("[", "").replace("]", "");
+
+        // 按逗号和空格分割字符串
+        String[] stringArr = str.split(" ");
+
+        // 创建一个新的 int 数组
+        int[] intArr = new int[stringArr.length];
+
+        // 将每个字符串元素转换为 int
+        for (int i = 0; i < stringArr.length; i++) {
+            intArr[i] = Integer.parseInt(stringArr[i]);
+        }
+
+        return intArr;
+    }
+
 //  用于填
     public static String paddingString(String inputString, int len){
         int length = inputString.length();
@@ -322,6 +394,8 @@ public class UtilTool {
         byte[] jpegData = byteArrayOutputStream.toByteArray();
         return jpegData;
     }
+
+
 
     public byte[] convertValue2ByteArr(String value, int arrLen) {
         byte[] strArr = value.getBytes();
@@ -463,34 +537,5 @@ public class UtilTool {
         return true;
     }
 
-    private static final long MIN_EXPOSURE_TIME = 100000L;
-    private static final long MAX_EXPOSURE_TIME = 32000000000L;
-    private static final int MIN_ISO = 100;
-    private static final int MAX_ISO = 3200;
-    private static final float MIN_FOCUS_DISTANCE = 0.2f;
-    private static final float MAX_FOCUS_DISTANCE = 10.0f;
 
-    private static final float MIN_ZOOM_RATIO = 1.0f;
-    private static final float MAX_ZOOM_RATIO = 10.0f;
-
-    boolean checkCameraParametersValid(long exposureTime, int iso, float focusDistance, float zoomRatio) {
-        // 检查曝光时间是否在合法范围内
-        if (exposureTime < MIN_EXPOSURE_TIME || exposureTime > MAX_EXPOSURE_TIME) {
-            return false;
-        }
-        // 检查ISO是否在合法范围内
-        if (iso < MIN_ISO || iso > MAX_ISO) {
-            return false;
-        }
-        // 检查焦距是否在合法范围内
-        if (focusDistance < MIN_FOCUS_DISTANCE || focusDistance > MAX_FOCUS_DISTANCE) {
-            return false;
-        }
-        // 检查缩放比例是否在合法范围内
-        if (zoomRatio < MIN_ZOOM_RATIO || zoomRatio > MAX_ZOOM_RATIO) {
-            return false;
-        }
-        // 所有参数都在合法范围内
-        return true;
-    }
 }

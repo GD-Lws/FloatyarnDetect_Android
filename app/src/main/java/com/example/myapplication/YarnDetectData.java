@@ -28,7 +28,6 @@ public class YarnDetectData {
 
     public String getKey() { return key; }
     public String getValue() { return value; }
-
     public float getVelocity() {return velocity;}
     public int getLum() { return lum; }
     public int getRegion() { return region; }
