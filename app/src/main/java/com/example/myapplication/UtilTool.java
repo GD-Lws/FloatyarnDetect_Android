@@ -79,6 +79,7 @@ public class UtilTool {
     public byte[] byteArrTCHA = {0x54, 0x43, 0x48, 0x41, 0x3A, 0x31, 0x00, 0x00};
     public byte[] byteArrTDRA = {0x54, 0x44, 0x52, 0x41, 0x0d, 0x0a, 0x00, 0x00};
     public byte[] byteArrQUERY = {0x54, 0x51, 0x55, 0x45, 0x52, 0x59, 0x0d, 0x0a};
+    public byte[] byteArrTGET = {0x47, 0x45, 0x54, 0x41, 0x42, 0x4C, 0x45, 0x0d};
 
     // 其他指令
     public byte[] byteArrGETPAR = {0x47, 0x45, 0x54, 0x50, 0x41, 0x52, 0x0d, 0x0a};
@@ -383,9 +384,10 @@ public class UtilTool {
             if (inputBytes[i] < 0 || inputBytes[i] > 255) {
                 throw new IllegalArgumentException("Invalid byte value: " + inputBytes[i]);
             }
-            combinedString.append((char) inputBytes[i]);
+            if(inputBytes[i] != 0x00){
+                combinedString.append((char) inputBytes[i]);
+            }
         }
-
         return combinedString.toString();
     }
     public byte[] saveBitmapAsJpg(Bitmap bitmap){
@@ -394,8 +396,6 @@ public class UtilTool {
         byte[] jpegData = byteArrayOutputStream.toByteArray();
         return jpegData;
     }
-
-
 
     public byte[] convertValue2ByteArr(String value, int arrLen) {
         byte[] strArr = value.getBytes();

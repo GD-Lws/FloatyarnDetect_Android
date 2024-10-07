@@ -13,7 +13,6 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ImageFormat;
 import android.graphics.PorterDuff;
-import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
 import android.graphics.drawable.ColorDrawable;
 import android.hardware.camera2.CameraAccessException;
@@ -54,7 +53,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ListView;
 import android.widget.PopupWindow;
-import android.widget.Spinner;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -76,6 +75,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.Semaphore;
@@ -111,7 +111,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         ACTIVE,
         EDIT,
         PIC,
-        MSG_END,
+        MSG_SEND,
         SQL_EDIT
     }
 
@@ -127,6 +127,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     private SerialInputOutputManager usbIoManager;
     private final ArrayList<SerListItem> serListItems = new ArrayList<>();
     private ArrayAdapter<SerListItem> listAdapter;
+    private List<YarnDetectData> listYarnData;
     private UsbManager usbManager = null;
     private UsbSerialPort usbSerialPort = null;
     private static final String INTENT_ACTION_GRANT_USB = BuildConfig.APPLICATION_ID + ".GRANT_USB";
@@ -136,7 +137,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     private static boolean flag_serConnect = false;
     private static final int WRITE_WAIT_MILLIS = 2000;
     private int linesPerChunks = 30;
-    private static final int CHUNK_SIZE = 640; // 定义每个包的大小
+    private static final int CHUNK_SIZE = 1024; // 定义每个包的大小
 
 /************************************************************************/
 
@@ -187,7 +188,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
     //    传输图标响应标志
     private volatile boolean ackReceived = false;
     private long recTimeOut = 1000;
-    private String strParamsTableName = "CameraParams";
+    private String strParamsTableName = "CParam";
 /************************************************************************/
 
     /***************   Transmission Identifier   *************************************/
@@ -197,8 +198,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
 
     private Button bt_sql_info;
     private SQLiteTool dbTool;
-    private String knitTableName = "";
-    private final String CREATETABLE = "";
+    private String knitTableName = "CParam";
     /************************************************************************/
     private  PowerManager.WakeLock wakeLock;
     private SoundStateMachine soundStateMachine;
@@ -344,8 +344,13 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         } else if (id == R.id.bt_Ser_roi) {
             flagGetImage = true;
         } else if (id == R.id.bt_Ser_sql) {
-            showPopupSQLWindow();
-            Toast.makeText(MainActivity.this, "SQL click", Toast.LENGTH_SHORT).show();
+            listYarnData = dbTool.sqlGetTableData(knitTableName);
+            for (int index = 0; index < listYarnData.size(); index++) {
+                YarnDetectData data = listYarnData.get(index);
+                byte[] dataByte = data.getByteArray(index);
+                Log.d("SQLiteTool", "Index: " + index + " " + dataByte.toString());
+            }
+            serSendYarnData(listYarnData);
         } else if (id == R.id.bt_Ser_Ready) {
             resetFlag();
             transStatus(serialStatus.READY);
@@ -681,6 +686,19 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         }
     }
 
+    private static final int REQUEST_CAMERA_PERMISSION = 100;
+    private static final int REQUEST_STORAGE_PERMISSION = 101;
+
+    private void serRequestPermissions() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, REQUEST_CAMERA_PERMISSION);
+        }
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_STORAGE_PERMISSION);
+        }
+    }
+
     private void cameraOpen(final int width, final int height) {
 
         new Thread(new Runnable() {
@@ -711,13 +729,6 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                         public void run() {
                             try {
                                 if (ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                                    // TODO: Consider calling
-                                    //    ActivityCompat#requestPermissions
-                                    // here to request the missing permissions, and then overriding
-                                    //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                                    //                                          int[] grantResults)
-                                    // to handle the case where the user grants the permission. See the documentation
-                                    // for ActivityCompat#requestPermissions for more details.
                                     return;
                                 }
                                 cameraManager.openCamera(cameraId, cameraStateCallback, mCameraStateHandler);
@@ -943,8 +954,9 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         }
     }
 
-    private void sendByteArrayWithAck(byte[] inputArray, serialStatus nextStatus) {
-        serNowStatus.set(serialStatus.MSG_END);
+    private boolean sendByteArrayWithAck(byte[] inputArray, serialStatus nextStatus) {
+        serNowStatus.set(serialStatus.MSG_SEND);
+        final boolean[] result = {false}; // 用于存储最终结果
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -990,6 +1002,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
 
                 if (globalSendFlag) {
                     Log.d("DAG", "Finish send msg.");
+                    result[0] = true; // 标记为成功
                     if (nextStatus == serialStatus.PIC) {
                         try {
                             for (int i = 0; i < 3; i++) {
@@ -1010,6 +1023,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 serNowStatus.set(nextStatus);
             }
         }).start();
+        return result[0];
     }
 
     // 等待单片机响应信号
@@ -1225,7 +1239,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     return;
                 }
                 switch (currentStatus) {
-                    case MSG_END:
+                    case MSG_SEND:
                         if (checkByteArray(inputBytes, myUtil.byteArrACK, 8)) {
                             ackReceived = true;
                         }
@@ -1303,7 +1317,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 Log.e(STG, "Error RecMsg-Pic:" + Arrays.toString(inputBytes));
             }
         }
-
+        
         // 处理 EDIT 状态
         private void handleEditState(byte[] inputBytes) throws CameraAccessException, InterruptedException {
             if (checkByteArray(inputBytes, myUtil.byteArrBA2RE, 8)) {
@@ -1341,7 +1355,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 transToNextStatus();
             } else if (checkByteArray(inputBytes, myUtil.byteArrTNAM, 8)) {
                 sqlGetTableNameArray(true);
-                Log.d(STG, "SQL State: Create knit table name");
+                Log.d(STG, "SQL State: Check knit table name");
             } else if (checkByteArray(inputBytes, myUtil.byteArrTCHA, 8)) {
                 sqlHandleState = 1;
                 Log.d(STG, "SQL State: Change knit table name");
@@ -1355,16 +1369,22 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 dbTool.dropAllTables();
                 Log.d(STG, "SQL State: Drop all table");
                 sqlGetTableNameArray(true);
-            }
-            else {
+            } else if ((checkByteArray(inputBytes, myUtil.byteArrTGET, 8))) {
+                sqlHandleState = 4;
+                listYarnData = dbTool.sqlGetTableData(knitTableName);
+                int size = listYarnData.size();
+                String listSizeStr = "L" + myUtil.paddingString(String.valueOf(size), 7);
+                Log.d(STG, "listSizeStr:" + listSizeStr);
+                serStrSend(listSizeStr);
+                Log.d(STG, "SQL State: Get table Data");
+            } else {
                 if (sqlHandleState != 0){
                     processSQLStateData(inputBytes, sqlHandleState);
                     sqlHandleState = 0;
                 }
             }
         }
-
-
+        
 
         // 处理 ACTIVE 状态
         // 处理 CAMERA 状态
@@ -1392,8 +1412,10 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                 // 切换表
                 String recTableName = myUtil.convertHexBytesToString(inputBytes);
                 knitTableName = recTableName;
-                dbTool.sqlUpdateCameraParameter(knitTableName,mCameraParameters, arrRoi1, arrRoi2);
+//                dbTool.sqlUpdateCameraParameter(knitTableName,mCameraParameters, arrRoi1, arrRoi2);
                 serByteSend(myUtil.byteArrACK);
+                Log.e(STG, "Change Table Name:" + knitTableName);
+
             }break;
             case 2:{
                 // 删除表
@@ -1414,6 +1436,10 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
                     serByteSend(myUtil.byteArrMSG_FINISH);
                     Thread.sleep(50);
                 }
+            }break;
+            case 4:{
+                Log.d(TAG, "GET " + knitTableName +" Table Data");
+                serSendYarnData(listYarnData);
             }break;
         }
     }
@@ -1499,6 +1525,41 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         }
     }
 
+    private void serSendYarnData(List<YarnDetectData> dataList) {
+        int totalLength = 0;
+        List<byte[]> byteArrayList = new ArrayList<>();
+        int size = dataList.size();
+        for (int index = 0; index < size; index++) {
+            YarnDetectData data = dataList.get(index);
+            byte[] dataByte = data.getByteArray(index);
+            byteArrayList.add(dataByte); // 存储每个 byte[]
+            totalLength += dataByte.length; // 计算总长度
+        }
+        Log.d(TAG, "TotalLength: " + totalLength);
+        int finishMsgLength = 8;
+        totalLength += finishMsgLength * 3; // 更新总长度，补充三次
+
+        byte[] sendByteArray = new byte[totalLength];
+        int allIndex = 0;
+
+        for (byte[] dataByte : byteArrayList) {
+            System.arraycopy(dataByte, 0, sendByteArray, allIndex, dataByte.length);
+            allIndex += dataByte.length;
+        }
+
+        // 添加结束标识符到 sendByteArray，补充三次
+        for (int i = 0; i < 3; i++) {
+            System.arraycopy(myUtil.byteArrMSG_FINISH, 0, sendByteArray, allIndex, finishMsgLength);
+            allIndex += finishMsgLength;
+        }
+        Log.d(TAG, "SendData: " + sendByteArray.toString());
+        if (!flag_serConnect) {
+            return;
+        }
+        serialStatus tempStatus = serNowStatus.get();
+        sendByteArrayWithAck(sendByteArray, tempStatus);
+    }
+
     private void sqlInsertYarnData(YarnDetectData[] detectData){
         List<ContentValues> valuesList = new ArrayList<>();
         for (int i = 0; i < detectData.length; i++) {
@@ -1516,12 +1577,12 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
             float tempZR = 0.0f;
             int[] tempRoi1 = new int[0], tempRoi2 = new int[0];
             try {
-                String strET = dbTool.fetchYarnDataById(tableName, "camera_exposureTime").getValue();
-                String strIso =dbTool.fetchYarnDataById(tableName, "camera_Iso").getValue();
-                String strFD = dbTool.fetchYarnDataById(tableName, "camera_focusDistance").getValue();
-                String strZR = dbTool.fetchYarnDataById(tableName, "camera_zoomRatio").getValue();
-                String strRoi1 = dbTool.fetchYarnDataById(tableName, "arrRoi1").getValue();
-                String strRoi2 = dbTool.fetchYarnDataById(tableName, "arrRoi2").getValue();
+                String strET = dbTool.fetchYarnDataById(tableName, "ETime").getValue();
+                String strIso =dbTool.fetchYarnDataById(tableName, "Iso").getValue();
+                String strFD = dbTool.fetchYarnDataById(tableName, "FDist").getValue();
+                String strZR = dbTool.fetchYarnDataById(tableName, "ZRat").getValue();
+                String strRoi1 = dbTool.fetchYarnDataById(tableName, "Roi1").getValue();
+                String strRoi2 = dbTool.fetchYarnDataById(tableName, "Roi2").getValue();
 
                 tempIso = Integer.parseInt(strIso);
                 tempET = Long.parseLong(strET);
@@ -1611,6 +1672,7 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         }
     }
 
+
 //    SQL功能测试窗口
     private PopupWindow popupSQLWindow, popupParamsWindow;
     private void showPopupCameraParamsWindow(){
@@ -1623,44 +1685,88 @@ public class MainActivity extends Activity implements SerialInputOutputManager.L
         popupParamsWindow.setBackgroundDrawable(new ColorDrawable(Color.WHITE));
         // 设置PopupWindow的动画效果（可选）
         popupParamsWindow.setAnimationStyle(android.R.style.Animation_Dialog);
+        EditText et_exposureTime,et_iso, et_focusDistance, et_zoomRatio;
+        et_exposureTime = popupView.findViewById(R.id.et_exposureTime);
+        et_exposureTime.setText(mCameraParameters.getExposureTime() + "");
+        et_iso = popupView.findViewById(R.id.et_iso);
+        et_iso.setText(mCameraParameters.getIso() + "");
+        et_focusDistance = popupView.findViewById(R.id.et_focusDistance);
+        et_focusDistance.setText(mCameraParameters.getFocusDistance() + "");
+        et_zoomRatio = popupView.findViewById(R.id.et_zoomRatio);
+        et_zoomRatio.setText(mCameraParameters.getZoomRatio() + "");
+        EditText et_camera_roi1_xy_se = popupView.findViewById(R.id.et_roi1_xy_se);
+        EditText et_camera_roi2_xy_se = popupView.findViewById(R.id.et_roi2_xy_se);
 
-        EditText et_exposureTime = popupView.findViewById(R.id.et_exposureTime);
-        EditText et_iso = popupView.findViewById(R.id.et_iso);
-        EditText et_focusDistance = popupView.findViewById(R.id.et_focusDistance);
-        EditText et_zoomRatio = popupView.findViewById(R.id.et_zoomRatio);
-        EditText et_camera_roi1_xy_s = popupView.findViewById(R.id.et_roi1_xy_s);
-        EditText et_camera_roi1_xy_e = popupView.findViewById(R.id.et_roi1_xy_e);
-        EditText et_camera_roi2_xy_s = popupView.findViewById(R.id.et_roi2_xy_s);
-        EditText et_camera_roi2_xy_e = popupView.findViewById(R.id.et_roi2_xy_e);
         Button bt_camera_ed_set = popupView.findViewById(R.id.bt_camera_ed_set);
-        Button bt_camera_ed_load = popupView.findViewById(R.id.bt_camera_ed_load);
+        Button bt_parameters_backHome  = popupView.findViewById(R.id.bt_paramtersBackHome);
+        SeekBar seekBarIso, seekBarExposureTime, seekBarZoomRatio, seekBarFocusDistance;
+        seekBarIso = popupView.findViewById(R.id.seekBar_iso);
+        seekBarExposureTime = popupView.findViewById(R.id.seekBar_exposureTime);
+        seekBarFocusDistance = popupView.findViewById(R.id.seekBar_focusDistance);
+        seekBarZoomRatio = popupView.findViewById(R.id.seekBar_zoomRatio);
+        bt_parameters_backHome.setOnClickListener(v -> popupParamsWindow.dismiss());
+        int[] isoRange = mCameraParameters.getIsoRange();
+        long[] exposureTimeRange = mCameraParameters.getExposureTimeRange();
+        float[] focusDistanceRange = mCameraParameters.getFocusRange();
+        float[] zoomRatioRange = mCameraParameters.getZoomRatioRange();
+        int initialProgress = 0;
+        initialProgress  = (mCameraParameters.getIso() - isoRange[0]) * 100 / (isoRange[2]);
+        seekBarIso.setProgress(initialProgress );
+        initialProgress = (int) ((mCameraParameters.getExposureTime() - exposureTimeRange[0]) * 100 / (exposureTimeRange[2]));
+        seekBarExposureTime.setProgress(initialProgress );
+        initialProgress = (int) ((mCameraParameters.getFocusDistance() - focusDistanceRange[0]) * 100 / (focusDistanceRange[2]));
+        seekBarFocusDistance.setProgress(initialProgress );
+        initialProgress = (int) ((mCameraParameters.getZoomRatio() - zoomRatioRange[0]) * 100 / (zoomRatioRange[2]));
+        seekBarZoomRatio.setProgress(initialProgress );
 
-        String strExposureTime = et_exposureTime.getText().toString();
-        String strIso = et_iso.getText().toString();
-        String strFocusDistance = et_focusDistance.getText().toString();
-        String strZoomRatio = et_zoomRatio.getText().toString();
-        String[] strRoi1_xy_s = et_camera_roi1_xy_s.getText().toString().split(",");
-        String[] strRoi1_xy_e = et_camera_roi1_xy_e.getText().toString().split(",");
-        String[] strRoi2_xy_s = et_camera_roi2_xy_s.getText().toString().split(",");
-        String[] strRoi2_xy_e = et_camera_roi2_xy_e.getText().toString().split(",");
+        String[] strRoi1_xy_se = et_camera_roi1_xy_se.getText().toString().split(",");
+        String[] strRoi2_xy_se = et_camera_roi2_xy_se.getText().toString().split(",");
+
+        SeekBar.OnSeekBarChangeListener seekBarListener = new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (seekBar.getId() == R.id.seekBar_iso) {
+                   int isoValue = isoRange[0] + (progress * (isoRange[1] - isoRange[0]) / 100);
+                    et_iso.setText(String.valueOf(isoValue));
+                    Log.d(TAG, "ISO Value: " + isoValue);
+                } else if (seekBar.getId() == R.id.seekBar_exposureTime) {
+                    long exposureTimeValue = exposureTimeRange[0] + (progress * (exposureTimeRange[1] - exposureTimeRange[0]) / 100);
+                    et_exposureTime.setText(String.valueOf(exposureTimeValue));
+                    Log.d(TAG, "Exposure Time: " + exposureTimeValue);
+                } else if (seekBar.getId() == R.id.seekBar_focusDistance) {
+                    float focusDistanceValue = focusDistanceRange[0] + (progress * (focusDistanceRange[1] - focusDistanceRange[0]) / 100);
+                    et_focusDistance.setText(String.valueOf(focusDistanceValue));
+                    Log.d(TAG, "Focus Distance: " + focusDistanceValue);
+                } else if (seekBar.getId() == R.id.seekBar_zoomRatio) {
+                    float zoomRatioValue = zoomRatioRange[0] + (progress * (zoomRatioRange[1] - zoomRatioRange[0]) / 100);
+                    et_zoomRatio.setText(String.valueOf(zoomRatioValue));
+                    Log.d(TAG, "Zoom Ratio: " + zoomRatioValue);
+                }
+            }
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {}
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {}
+        };
+
+        seekBarExposureTime.setOnSeekBarChangeListener(seekBarListener);
+        seekBarIso.setOnSeekBarChangeListener(seekBarListener);
+        seekBarFocusDistance.setOnSeekBarChangeListener(seekBarListener);
+        seekBarZoomRatio.setOnSeekBarChangeListener(seekBarListener);
 
         bt_camera_ed_set.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 try{
-                    Long longExposureTime = Long.parseLong(strExposureTime);
-                    int intIso = Integer.parseInt(strIso);
-                    float floatFocusDistance = Float.parseFloat(strFocusDistance);
-                    float floatZoomRatio = Float.parseFloat(strZoomRatio);
-                    for (int i = 0; i < 4; i++) {
-                        if (i < 2){
-                            arrRoi1[i] = Integer.parseInt(strRoi1_xy_s[i]);
-                            arrRoi2[i] = Integer.parseInt(strRoi2_xy_s[i]);
-                        }else {
-                            arrRoi1[i] = Integer.parseInt(strRoi1_xy_e[i - 2]);
-                            arrRoi2[i] = Integer.parseInt(strRoi2_xy_e[i - 2]);
-                        }
-                    }
+                    Long longExposureTime = Long.parseLong(et_exposureTime.getText().toString());
+                    int intIso = Integer.parseInt(et_iso.getText().toString());
+                    float floatFocusDistance = Float.parseFloat(et_focusDistance.getText().toString());
+                    float floatZoomRatio = Float.parseFloat(et_zoomRatio.getText().toString());
+//                    for (int i = 0; i < 4; i++) {
+//                        arrRoi1[i] = Integer.parseInt(strRoi1_xy_se[i]);
+//                        arrRoi2[i] = Integer.parseInt(strRoi2_xy_se[i]);
+//                    }
                     setCameraParameters(longExposureTime, intIso, floatFocusDistance, floatZoomRatio, strParamsTableName);
                 }catch (NumberFormatException e){
                     System.out.println("Error: Invalid input string for int conversion.");

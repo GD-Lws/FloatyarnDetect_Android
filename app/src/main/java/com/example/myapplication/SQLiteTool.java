@@ -16,7 +16,9 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * SQLiteTool类用于简化SQLite数据库的操作。
@@ -42,23 +44,63 @@ public class SQLiteTool extends SQLiteOpenHelper {
     }
 
     public void sqlUpdateCameraParameter(String tableName, CameraParameters cameraParameters, int[] arrRoi1, int[] arrRoi2){
-        sqlUpdateParameter(tableName, "camera_focusDistance",cameraParameters.getFocusDistance());
-        sqlUpdateParameter(tableName, "camera_Iso", cameraParameters.getIso());
-        sqlUpdateParameter(tableName, "camera_exposureTime", cameraParameters.getExposureTime());
-        sqlUpdateParameter(tableName, "camera_zoomRatio", cameraParameters.getZoomRatio());
-        sqlUpdateParameter(tableName, "arrRoi1",arrayToSting(arrRoi1));
-        sqlUpdateParameter(tableName, "arrRoi2",arrayToSting(arrRoi2));
+        sqlUpdateParameter(tableName, "FDist",cameraParameters.getFocusDistance());
+        sqlUpdateParameter(tableName, "Iso", cameraParameters.getIso());
+        sqlUpdateParameter(tableName, "ETime", cameraParameters.getExposureTime());
+        sqlUpdateParameter(tableName, "ZRat", cameraParameters.getZoomRatio());
+        sqlUpdateParameter(tableName, "Roi1",arrayToSting(arrRoi1));
+        sqlUpdateParameter(tableName, "Roi2",arrayToSting(arrRoi2));
     }
+
+    public List<YarnDetectData> sqlGetTableData(String tableName) {
+        List<YarnDetectData> dataList = new ArrayList<>();
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = null;
+        try {
+            // 检查表是否存在
+            cursor = db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name=?", new String[]{tableName});
+            if (cursor.getCount() == 0) {
+                Log.e(TAG, "Table " + tableName + " does not exist.");
+                return dataList; // 或者抛出异常
+            }
+            Log.d(TAG, "Table " + tableName + " exists.");
+            cursor.close(); // 关闭检查表存在的Cursor
+            // 查询表数据
+            cursor = db.rawQuery("SELECT * FROM " + tableName, null);
+            if (cursor.moveToFirst()) {
+                do {
+                    Map<String, String> dataMap = new HashMap<>();
+                    for (int i = 0; i < cursor.getColumnCount(); i++) {
+                        dataMap.put(cursor.getColumnName(i), cursor.getString(i));
+                    }
+                    YarnDetectData data = YarnDetectData.fromMap(dataMap);
+                    dataList.add(data);
+                } while (cursor.moveToNext());
+            }
+            Log.d(TAG, "DataList Size: " + dataList.size());
+//            Log.d(TAG, "DataList 0: " + dataList.get(0).toString());
+
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+            db.close();
+        }
+        return dataList;
+    }
+
+
+
 
     public void sqlInsertCameraParameter(String tableName, CameraParameters cameraParameters, int[] arrRoi1, int[] arrRoi2){
         List<ContentValues> valuesList = new ArrayList<>();
-        valuesList.add(createContentValues("camera_focusDistance", String.valueOf(cameraParameters.getFocusDistance()),0.0f, 0, 0));
-        valuesList.add(createContentValues("camera_Iso", String.valueOf(cameraParameters.getIso()), 0.0f, 0, 0));
-        valuesList.add(createContentValues("camera_exposureTime", String.valueOf(cameraParameters.getExposureTime()),0.0f, 0, 0));
-        valuesList.add(createContentValues("camera_zoomRatio", String.valueOf(cameraParameters.getZoomRatio()),0.0f, 0, 0));
+        valuesList.add(createContentValues("FDist", String.valueOf(cameraParameters.getFocusDistance()),0.0f, 0, 0));
+        valuesList.add(createContentValues("Iso", String.valueOf(cameraParameters.getIso()), 0.0f, 0, 0));
+        valuesList.add(createContentValues("ETime", String.valueOf(cameraParameters.getExposureTime()),0.0f, 0, 0));
+        valuesList.add(createContentValues("ZRat", String.valueOf(cameraParameters.getZoomRatio()),0.0f, 0, 0));
 
-        valuesList.add(createContentValues("arrRoi1", String.valueOf(arrayToSting(arrRoi1)),0.0f, 0, 0));
-        valuesList.add(createContentValues("arrRoi2", String.valueOf(arrayToSting(arrRoi2)),0.0f, 0, 0));
+        valuesList.add(createContentValues("Roi1", String.valueOf(arrayToSting(arrRoi1)),0.0f, 0, 0));
+        valuesList.add(createContentValues("Roi2", String.valueOf(arrayToSting(arrRoi2)),0.0f, 0, 0));
         // 批量插入数据
         batchInsertData(tableName, valuesList);
         Log.d(TAG, "数据库插入相机参数");
