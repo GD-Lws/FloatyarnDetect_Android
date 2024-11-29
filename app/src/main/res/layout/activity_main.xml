@@ -1,115 +1,168 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    tools:context=".MainActivity">
-      <LinearLayout
-          android:layout_width="match_parent"
-          android:layout_height="match_parent"
-          android:layout_weight="1.7"
-          android:orientation="horizontal"
-          >
-
+    android:orientation="vertical">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_weight="0.52"
+        android:orientation="horizontal"
+        >
         <Spinner
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:textSize="12dp"
-            android:textColor="#000000"
-            android:entries="@array/Mode"
-            android:id="@+id/Spinner_mode"
+            android:text="BaudRate"
+            android:entries="@array/BaudRate"
+            android:id="@+id/sp_Ser_baudRate"
             />
-          <!--            android:text="ModeSelect"-->
-          <TextView
-              android:layout_width="match_parent"
-              android:layout_height="match_parent"
-              android:layout_weight="1"
-              android:id="@+id/tv_machine_row"
-              android:text="Location"
-              android:textColor="#000000"
-              android:textSize="18dp"
-              />
-          <Button
-              android:layout_width="match_parent"
-              android:layout_height="match_parent"
-              android:layout_weight="1"
-              android:text="Serial"
-              android:textColor="#000000"
 
-              android:id="@+id/button_serial"
-              android:background="#FFFFFF"
-              />
-
-      </LinearLayout>
+        <Button
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:text="Camera"
+            android:id="@+id/bt_Ser_camera"
+            android:layout_weight="1"
+            />
+        <Button
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:text="Roi"
+            android:id="@+id/bt_Ser_roi"
+            android:layout_weight="1"
+            />
+        <Spinner
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="Mode"
+            android:entries="@array/Mode"
+            android:id="@+id/sp_Ser_Mode"
+            />
+    </LinearLayout>
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_weight="0.2"
-        android:orientation="vertical"
-
+        android:layout_weight="0.52"
+        android:orientation="horizontal"
         >
-    <TextureView
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:text="Serial"
+            android:id="@+id/tv_ser_State"
+            android:layout_weight="1"
+            />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:text="Camera"
+            android:id="@+id/tv_camera_State"
+            android:layout_weight="1"
+            />
+    </LinearLayout>
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:id="@+id/textureview_result"
-        android:layout_weight="1"
-        />
-    <TextureView
+        android:orientation="vertical"
+        android:layout_weight="0.2"
+        >
+        <ListView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:id="@+id/lv_Ser_derive"
+            android:layout_weight="0.4"
+            />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:hint="Receive:"
+            android:textSize="20dp"
+            android:layout_weight="0.4"
+            android:id="@+id/tv_Ser_rec"
+            android:gravity="top|left"
+            />
+        <TextureView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_weight="0.11"
+            android:id="@+id/textureView_resultShow"
+            />
+
+    </LinearLayout>
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:id="@+id/textureview_camera"
-        android:layout_weight="1"
-        />
+        android:layout_weight="0.52"
+        android:orientation="horizontal"
+        >
+
+        <Button
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:text="SQLite"
+            android:id="@+id/bt_Ser_sql"
+            android:layout_weight="1"
+            />
+        <Button
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:text="Params"
+            android:id="@+id/bt_Ser_params"
+            android:layout_weight="1"
+            />
+        <Button
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="Ready"
+            android:id="@+id/bt_Ser_Ready"
+            />
+        <Button
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:text="Detect"
+            android:id="@+id/bt_Ser_detect"
+            android:layout_weight="1"
+            />
     </LinearLayout>
 
-      <LinearLayout
-          android:layout_width="match_parent"
-          android:layout_height="match_parent"
-          android:layout_weight="1.7"
-          android:orientation="horizontal"
-          >
-         <Button
-             android:layout_width="match_parent"
-             android:layout_height="match_parent"
-             android:background="#FFFFFF"
-             android:text="FILE"
-             android:textSize="15dp"
-             android:textColor="#000000"
-             android:id="@+id/button_file"
-             android:layout_weight="1"
-    />
-         <Button
-             android:layout_width="match_parent"
-             android:layout_height="match_parent"
-             android:text="Start"
-             android:textSize="15dp"
-             android:textColor="#000000"
-             android:id="@+id/button_start"
-             android:background="#FFFFFF"
-             android:layout_weight="1"
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_weight="0.52"
+        android:orientation="horizontal"
+        >
+        <Button
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:text="Open"
+            android:id="@+id/bt_Ser_open"
+            android:layout_weight="1"
+            />
+        <Button
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:text="Send"
+            android:id="@+id/bt_Ser_send"
+            android:layout_weight="1"
+            />
+        <Button
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:text="Close"
+            android:id="@+id/bt_Ser_close"
+            android:layout_weight="1"
+            />
+        <Button
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="Refresh"
+            android:id="@+id/bt_Ser_refresh"
+            />
+    </LinearLayout>
 
-             />
-          <Button
-              android:layout_width="match_parent"
-              android:layout_height="match_parent"
-              android:text="RECORD"
-              android:textColor="#000000"
-              android:textSize="15dp"
-              android:background="#FFFFFF"
-              android:id="@+id/button_record"
-              android:layout_weight="1"
-              />
-          <Spinner
-              android:layout_width="match_parent"
-              android:layout_height="match_parent"
-              android:textSize="15dp"
-              android:textColor="#000000"
-              android:id="@+id/Spinner_Setpar"
-              android:layout_weight="1"
-              android:background="#FFFFFF"
-              android:entries="@array/ParSet"
-              />
-      </LinearLayout>
 </LinearLayout>

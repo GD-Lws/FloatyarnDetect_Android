@@ -2,34 +2,41 @@ package com.example.myapplication;
 
 import android.Manifest;
 import android.app.Activity;
-import android.content.Context;
 import android.content.pm.PackageManager;
-import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CameraManager;
 import android.media.Image;
-import android.net.Uri;
-import android.provider.MediaStore;
+import android.util.Base64;
 import android.util.Log;
-import android.widget.Toast;
+import android.util.Range;
 
 import org.opencv.android.Utils;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
 
 import androidx.annotation.NonNull;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
 
-public class MyUtil {
-    public MyUtil(){
+public class UtilTool {
+    public UtilTool(){
 
     }
     private static final int REQUEST_CODE_PERMISSIONS = 100;
@@ -144,7 +151,228 @@ public class MyUtil {
         return bw;
     }
 
+    // 读取文件并按行分块存储，附加包号
+    public List<List<String>> readFileAndSplitIntoChunks(String filePath, int linesPerChunk) {
+        List<List<String>> chunks = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new FileReader(new File(filePath)))) {
+            String line;
+            int chunkId = 0;
+            List<String> chunk = new ArrayList<>();
+            chunk.add("ChunkID:" + chunkId); // 附加包号
+            while ((line = reader.readLine()) != null) {
+                chunk.add(line);
+                if (chunk.size() > linesPerChunk) {
+                    chunks.add(chunk);
+                    chunkId++;
+                    chunk = new ArrayList<>();
+                    chunk.add("ChunkID:" + chunkId); // 附加包号
+                }
+            }
+            // 添加最后的块
+            if (!chunk.isEmpty()) {
+                chunks.add(chunk);
+            }
+        } catch (IOException e) {
+            Log.e(DAG, "Error reading file", e);
+        }
+        return chunks;
+    }
 
+
+    public String bitmapToString(Bitmap bitmap) {
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream);
+        byte[] byteArray = byteArrayOutputStream.toByteArray();
+        return Base64.encodeToString(byteArray, Base64.DEFAULT);
+    }
+    // 保存数据到本地文件的方法
+    public void strSaveToFile(String file_path, String file_name, String data) {
+        // 确保存储目录存在
+        File storageDir = new File(file_path);
+        if (!storageDir.exists()) {
+            storageDir.mkdirs();
+        }
+        // 保存文件
+        File file = new File(file_path, file_name);
+        FileOutputStream fos = null;
+        try {
+            fos = new FileOutputStream(file);
+            fos.write(data.getBytes());
+            fos.flush();
+            Log.d(DAG, "Data saved to file: " + file.getAbsolutePath());
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            if (fos != null) {
+                try {
+                    fos.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    private final int MINISO =  100;
+    private final int MAXISO =  1200;
+    private final float MAXFD =  12.0f;
+    private final float MINFD =  3.0f;
+
+
+
+//    public static boolean checkCameraParamsRange(long ET, int ISO, float FD, float ZR){
+//
+//    }
+
+    public static void logCameraParamsRange(String tag,CameraManager cameraManager){
+        try {
+            String[] cameraIds = cameraManager.getCameraIdList();
+            for (String cameraId : cameraIds) {
+                CameraCharacteristics characteristics = cameraManager.getCameraCharacteristics(cameraId);
+
+                // 打印感光度范围
+                Range<Integer> sensitivityRange = characteristics.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE);
+                if (sensitivityRange != null) {
+                    Log.d(tag, "ISO Sensitivity Range: " + sensitivityRange.getLower() + " to " + sensitivityRange.getUpper());
+                } else {
+                    Log.d(tag, "ISO Sensitivity Range: Not available");
+                }
+
+                // 打印曝光时间范围
+                Range<Long> exposureTimeRange = characteristics.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE);
+                if (exposureTimeRange != null) {
+                    Log.d(tag, "Exposure Time Range: " + exposureTimeRange.getLower() + " to " + exposureTimeRange.getUpper() + " nanoseconds");
+                } else {
+                    Log.d(tag, "Exposure Time Range: Not available");
+                }
+
+                // 打印焦距范围
+                float[] focalLengths = characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS);
+                if (focalLengths != null && focalLengths.length > 0) {
+                    float minFocalLength = Float.MAX_VALUE;
+                    float maxFocalLength = Float.MIN_VALUE;
+
+                    for (float focalLength : focalLengths) {
+                        if (focalLength < minFocalLength) {
+                            minFocalLength = focalLength;
+                        }
+                        if (focalLength > maxFocalLength) {
+                            maxFocalLength = focalLength;
+                        }
+                    }
+
+                    Log.d(tag, "Focal Length Range: " + minFocalLength + " to " + maxFocalLength + " mm");
+            }
+        }
+        } catch (Exception e) {
+            Log.e(tag, "Error accessing camera characteristics", e);
+        }
+    }
+
+
+    public static int[] inputRoiArray(byte[] inputBytes) {
+        if (inputBytes.length != 8) {
+            throw new IllegalArgumentException("Input byte array must be exactly 8 bytes long.");
+        }
+
+        byte[] x1Bytes = Arrays.copyOfRange(inputBytes, 0, 4);
+        byte[] y1Bytes = Arrays.copyOfRange(inputBytes, 4, 8);
+
+        String x1_str = convertHexBytesToString(x1Bytes);
+        String y1_str = convertHexBytesToString(y1Bytes);
+
+        int x1;
+        int y1;
+
+        try {
+            x1 = Integer.parseInt(x1_str);
+            y1 = Integer.parseInt(y1_str);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Error converting string to integer: " + e.getMessage());
+        }
+
+        return new int[]{x1, y1};
+    }
+
+//  用于填
+    public static String paddingString(String inputString){
+        int length = inputString.length();
+        if (length < 8){
+            for (int i = 0; i < 8-length; i++) {
+                inputString = "0" + inputString;
+            }
+        }
+        return inputString;
+    }
+
+    public static String convertHexBytesToString(byte[] inputBytes) {
+        StringBuilder combinedString = new StringBuilder();
+        for (int i = 0; i < inputBytes.length; i++) {
+            if (inputBytes[i] < 0 || inputBytes[i] > 255) {
+                throw new IllegalArgumentException("Invalid byte value: " + inputBytes[i]);
+            }
+            combinedString.append((char) inputBytes[i]);
+        }
+
+        return combinedString.toString();
+    }
+    public byte[] saveBitmapAsJpg(Bitmap bitmap){
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 100, byteArrayOutputStream);
+        byte[] jpegData = byteArrayOutputStream.toByteArray();
+        return jpegData;
+    }
+    public void writeBytesAsHexToFile(byte[] byteArray, String directoryPath, String fileName) throws IOException {
+        // 创建目录
+        File dir = new File(directoryPath);
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+        // 创建文件
+        File file = new File(dir, fileName);
+        if (!file.exists()) {
+            file.createNewFile();
+        }
+        BufferedWriter writer = new BufferedWriter(new FileWriter(file));
+
+        for (byte b : byteArray) {
+            String hexString = String.format("%02X", b);
+            writer.write(hexString);
+            writer.write(" "); // 添加空格以便于阅读
+        }
+
+        writer.close();
+    }
+
+    private void saveBitmapAsFile(Bitmap bitmap, String saveFilePath) {
+        FileOutputStream out = null;
+        File file = null;
+        try {
+            // 确保存储目录存在
+            File storageDir = new File(saveFilePath);
+            if (!storageDir.exists()) {
+                storageDir.mkdirs();
+            }
+
+            // 创建文件
+            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+            String fileName = "grayscale_image_" + timeStamp + ".png";
+            file = new File(storageDir, fileName);
+            out = new FileOutputStream(file);
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out); // 保存为 PNG 文件
+            Log.d(FAG, "Saved file path: " + file.getAbsolutePath());
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                if (out != null) {
+                    out.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
     public boolean createFolder(String folderPath) {
         boolean create_folder = false;
         File folder = new File(folderPath);
@@ -233,7 +461,7 @@ public class MyUtil {
     private static final float MIN_ZOOM_RATIO = 1.0f;
     private static final float MAX_ZOOM_RATIO = 10.0f;
 
-    boolean isCameraParametersValid(long exposureTime, int iso, float focusDistance, float zoomRatio) {
+    boolean checkCameraParametersValid(long exposureTime, int iso, float focusDistance, float zoomRatio) {
         // 检查曝光时间是否在合法范围内
         if (exposureTime < MIN_EXPOSURE_TIME || exposureTime > MAX_EXPOSURE_TIME) {
             return false;
@@ -253,5 +481,4 @@ public class MyUtil {
         // 所有参数都在合法范围内
         return true;
     }
-
 }

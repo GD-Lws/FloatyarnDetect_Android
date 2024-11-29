@@ -110,72 +110,88 @@ Java_com_example_myapplication_MainActivity_stringFromJNI(
 
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_example_myapplication_MainActivity_detectYarnInImage(JNIEnv* env, jobject p_this, jobject bitmapIn, jobject bitmapOut,
+Java_com_example_myapplication_MainActivity_detectYarnInImage(JNIEnv* env, jobject p_this, jlong matIn, jlong matOut,
                                                               jintArray roi1, jintArray roi2, jfloatArray detectPar,
-                                                              jstring savefilePath, jint yarnRow) {
-    Mat matIn, matOut;
-    bitmapToMat(env, bitmapIn, matIn, false);
+                                                              jstring saveFilePath, jint yarnRow) {
+    cv::Mat& matRaw = *(cv::Mat*) matIn;
+    cv::Mat& matAfter = *(cv::Mat*) matOut;
 
-    const char *filePath = env->GetStringUTFChars(savefilePath, nullptr);
+    // 获取保存路径字符串
+    const char* filePath = env->GetStringUTFChars(saveFilePath, nullptr);
     if (filePath == nullptr) {
-        // 获取字符串失败
-        return false;
+        return JNI_FALSE; // 获取路径失败
     }
 
-    // 创建C++整数数组来存储ROI值
-    jint* roi1Array  = env->GetIntArrayElements(roi1, nullptr);
+    // 获取 C++ 整数数组来存储 ROI 值
+    jint* roi1Array = env->GetIntArrayElements(roi1, nullptr);
     jint* roi2Array = env->GetIntArrayElements(roi2, nullptr);
     jfloat* detectArray = env->GetFloatArrayElements(detectPar, nullptr);
 
+    // 复制原始图像到输出图像
+    matRaw.copyTo(matAfter);
+
     // 使用提取的值初始化 ROI 区域
-    Mat matroi1, matroi2;
-    myRoi(matIn, matroi1, matroi2, roi1Array, roi2Array);
+    cv::Mat matroi1, matroi2;
+    try {
+        myRoi(matRaw, matroi1, matroi2, roi1Array, roi2Array);
+    } catch (const std::exception& e) {
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "Error in myRoi: %s", e.what());
+        env->ReleaseIntArrayElements(roi1, roi1Array, JNI_ABORT);
+        env->ReleaseIntArrayElements(roi2, roi2Array, JNI_ABORT);
+        env->ReleaseFloatArrayElements(detectPar, detectArray, JNI_ABORT);
+        env->ReleaseStringUTFChars(saveFilePath, filePath);
+        return JNI_FALSE;
+    }
 
     // 检测 ROI 区域中的纱线
-    Mat matresult1, matresult2;
+    cv::Mat matresult1, matresult2;
     bool detect_flag_1 = myDetect(matroi1, matresult1, detectArray[0], detectArray[1], detectArray[2]);
     bool detect_flag_2 = myDetect(matroi2, matresult2, detectArray[0], detectArray[1], detectArray[2]);
 
     // 将检测结果复制到输出图像中的相应 ROI 区域
-    matresult1.copyTo(matIn(Rect(roi1Array[0], roi1Array[1], roi1Array[2] - roi1Array[0], roi1Array[3] - roi1Array[1])));
-    matresult2.copyTo(matIn(Rect(roi2Array[0], roi2Array[1], roi2Array[2] - roi2Array[0], roi2Array[3] - roi2Array[1])));
+    try {
+        matresult1.copyTo(matAfter(cv::Rect(roi1Array[0], roi1Array[1], roi1Array[2] - roi1Array[0], roi1Array[3] - roi1Array[1])));
+        matresult2.copyTo(matAfter(cv::Rect(roi2Array[0], roi2Array[1], roi2Array[2] - roi2Array[0], roi2Array[3] - roi2Array[1])));
+    } catch (const cv::Exception& e) {
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "Error in copying result to matAfter: %s", e.what());
+        env->ReleaseIntArrayElements(roi1, roi1Array, JNI_ABORT);
+        env->ReleaseIntArrayElements(roi2, roi2Array, JNI_ABORT);
+        env->ReleaseFloatArrayElements(detectPar, detectArray, JNI_ABORT);
+        env->ReleaseStringUTFChars(saveFilePath, filePath);
+        return JNI_FALSE;
+    }
 
-    // 生成保存路径并保存图像
-    if (strcmp(filePath, "N") != 0)
-    {
-        std::string savePath1 = std::string(filePath) + "/roi1/matresult1_" + std::to_string(yarnRow) + ".bmp";
-        std::string savePath2 = std::string(filePath) + "/roi2/matresult2_" + std::to_string(yarnRow) + ".bmp";
+    // 保存图像到指定路径
+    if (strcmp(filePath, "N") != 0) {
+        std::string basePath(filePath);
+        std::string savePath1 = basePath + "/roi1/matresult1_" + std::to_string(yarnRow) + ".bmp";
+        std::string savePath2 = basePath + "/roi2/matresult2_" + std::to_string(yarnRow) + ".bmp";
         imwrite(savePath1, matresult1);
         imwrite(savePath2, matresult2);
-        if (detect_flag_1){
-            std::string savePath3 = std::string(filePath) + "/det/matresult1_" + std::to_string(yarnRow) + ".bmp";
+
+        if (detect_flag_1) {
+            std::string savePath3 = basePath + "/det/matresult1_" + std::to_string(yarnRow) + ".bmp";
             imwrite(savePath3, matresult1);
         }
-        if (detect_flag_2){
-            std::string savePath4 = std::string(filePath) + "/det/matresult2_" + std::to_string(yarnRow) + ".bmp";
+        if (detect_flag_2) {
+            std::string savePath4 = basePath + "/det/matresult2_" + std::to_string(yarnRow) + ".bmp";
             imwrite(savePath4, matresult2);
         }
+
         __android_log_print(ANDROID_LOG_INFO, TAG, "matresult1 save path: %s", savePath1.c_str());
         __android_log_print(ANDROID_LOG_INFO, TAG, "matresult2 save path: %s", savePath2.c_str());
     }
 
-    // 将输出图像转换为 Bitmap
-    matToBitmap(env, matIn, bitmapOut, false);
-
     // 释放资源
-    matroi1.release();
-    matroi2.release();
-    matresult1.release();
-    matresult2.release();
     env->ReleaseIntArrayElements(roi1, roi1Array, JNI_ABORT);
     env->ReleaseIntArrayElements(roi2, roi2Array, JNI_ABORT);
-    env->ReleaseStringUTFChars(savefilePath, filePath);
+    env->ReleaseFloatArrayElements(detectPar, detectArray, JNI_ABORT);
+    env->ReleaseStringUTFChars(saveFilePath, filePath);
 
     // 返回检测结果
-    return (detect_flag_1 | detect_flag_2);
+    return (detect_flag_1 || detect_flag_2) ? JNI_TRUE : JNI_FALSE;
 }
-//bool detect_flag_1 = myDetect(matroi1, matresult1, 30.0, 255.0, 0.3);
-//bool detect_flag_2 = myDetect(matroi2, matresult2, 30.0, 255.0, 0.3);
+
 
 
 extern "C" JNIEXPORT void JNICALL
@@ -199,7 +215,32 @@ Java_com_example_myapplication_MainActivity_blur(JNIEnv* env, jobject p_this, jo
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_example_myapplication_MainActivity_drawRoiRange(JNIEnv* env, jobject p_this, jobject bitmapIn, jobject bitmapOut,
+Java_com_example_myapplication_MainActivity_matDrawRoiRange(JNIEnv* env, jobject p_this, jlong matIn, jlong matOut,
+                                                         jintArray roi1, jintArray roi2) {
+    // 解引用传入的 Mat 指针
+    cv::Mat& matRaw = *(cv::Mat*) matIn;
+    cv::Mat& matAfter = *(cv::Mat*) matOut;
+
+    // 将 ROI 数组转换为 C++ 数组
+    jint* roi1Array = env->GetIntArrayElements(roi1, nullptr);
+    jint* roi2Array = env->GetIntArrayElements(roi2, nullptr);
+
+    // 确保 matOut 已经被正确初始化
+    if (matAfter.empty()) {
+        // 根据需要初始化 matAfter，这里假设与 matRaw 相同的尺寸和类型
+        matAfter.create(matRaw.size(), matRaw.type());
+    }
+
+    // 调用 myRectangle 函数绘制矩形
+    matAfter = myRectangle(matRaw, roi1Array, roi2Array);
+
+    // 释放 ROI 数组
+    env->ReleaseIntArrayElements(roi1, roi1Array, JNI_ABORT);
+    env->ReleaseIntArrayElements(roi2, roi2Array, JNI_ABORT);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_example_myapplication_MainActivity_bitmapDrawRoiRange(JNIEnv* env, jobject p_this, jobject bitmapIn, jobject bitmapOut,
                                                          jintArray roi1, jintArray roi2) {
     Mat src;
     bitmapToMat(env, bitmapIn, src, false);
@@ -211,7 +252,7 @@ Java_com_example_myapplication_MainActivity_drawRoiRange(JNIEnv* env, jobject p_
     Mat result = myRectangle(src, roi1Array, roi2Array);
 
     // 将绘制后的图像转换为 Bitmap 并返回
-    matToBitmap(env, result, bitmapOut, true);
+    matToBitmap(env, result, bitmapOut, false);
     src.release();
     result.release();
     env->ReleaseIntArrayElements(roi1, roi1Array, JNI_ABORT);

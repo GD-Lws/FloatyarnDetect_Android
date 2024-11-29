@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="SQL TEST:"
+        android:textSize="40dp"
+        />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="TableName:"
+        android:textSize="20dp"
+        />
+
+    <EditText
+        android:id="@+id/et_sql_tablename"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="20dp"
+        />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="KEY:"
+        android:textSize="20dp"
+        />
+
+    <EditText
+        android:id="@+id/et_sql_key"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="20dp"
+        android:hint="camera_fd"
+        />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Value:"
+        android:textSize="20dp"
+        />
+
+    <EditText
+        android:id="@+id/et_sql_value"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="100~3200"
+        android:textSize="20dp"
+        android:inputType="number"
+        />
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="LUM:"
+        android:textSize="20dp"
+        android:inputType="number"
+        />
+    <EditText
+        android:id="@+id/et_sql_lum"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="0.2~10.0"
+        android:textSize="20dp"
+        android:inputType="number"
+        />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Region:"
+        android:textSize="20dp"
+        />
+
+    <EditText
+        android:id="@+id/et_sql_region"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="1.0~10.0"
+        android:textSize="20dp"
+        />
+    <EditText
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="30dp"
+        android:text="camera_Iso"
+        android:id="@+id/et_sql_findKey"
+        />
+    <Button
+        android:id="@+id/bt_sql_setTableName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="SQL_TabelName" />
+
+    <Button
+        android:id="@+id/bt_sql_write"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="SQL_write" />
+
+    <Button
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="SQL_load"
+        android:id="@+id/bt_sql_load"
+        />
+    <Button
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="SQL_Refresh"
+        android:id="@+id/bt_sql_refresh"
+        />
+    <Button
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="fetch"
+        android:id="@+id/bt_sql_fetch"
+        />
+</LinearLayout>

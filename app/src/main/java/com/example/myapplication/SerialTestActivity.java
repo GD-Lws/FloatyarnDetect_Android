@@ -30,15 +30,9 @@ import com.hoho.android.usbserial.util.SerialInputOutputManager;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Locale;
 
-import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
 
 public class SerialTestActivity extends Activity implements View.OnClickListener {
     private UsbManager usbManager = null;
@@ -77,7 +71,7 @@ public class SerialTestActivity extends Activity implements View.OnClickListener
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_serial_test);
+        setContentView(R.layout.activity_serial);
 //        initView();
 
         listAdapter = new ArrayAdapter<ListItem>(SerialTestActivity.this, 0, listItems) {
